@@ -1,0 +1,19 @@
+[project]
+name = "econbase-abstracts"
+version = "0.1.0"
+description = "Embed and cluster econometrics paper abstracts from arXiv"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "arxiv>=2.4.0",
+    "flask>=3.1.1",
+    "hdbscan>=0.8.41",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+    "pandas>=3.0.1",
+    "plotly>=6.5.2",
+    "polars>=1.38.1",
+    "pyarrow>=23.0.1",
+    "pylatexenc>=2.10",
+    "umap-learn>=0.5.11",
+]
