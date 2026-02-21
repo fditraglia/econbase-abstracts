@@ -16,13 +16,15 @@ uv run python app.py         # Run Flask app locally at http://localhost:5000
 
 Embedding requires Ollama running locally: `ollama pull qwen3-embedding`
 
-## Deployment (Render)
+## Deployment (Hugging Face Spaces)
 
-The Flask app is deployed on Render. It auto-deploys on push to GitHub.
+The Flask app is deployed at https://huggingface.co/spaces/fditraglia/referee-recommender (Docker SDK, free CPU tier). Deploy with:
 
-- **Build command**: `pip install -r requirements.txt`
-- **Start command**: `gunicorn app:app`
-- **Parquet files**: Tracked via Git LFS (too large for regular Git). Run `git lfs install` after cloning.
+```bash
+git push hf master:main    # HF Spaces (SSH remote)
+```
+
+The `hf` remote points to `git@hf.co:spaces/fditraglia/referee-recommender`. The Dockerfile runs gunicorn on port 7860 (HF requirement). Parquet files are tracked via Git LFS.
 
 ## Pipeline and data flow
 
