@@ -1,0 +1,261 @@
+---
+title: "Clustering econ.EM Paper Embeddings"
+format:
+  html:
+    embed-resources: true
+execute:
+  warning: false
+---
+
+```{python}
+#| label: setup
+import numpy as np
+import polars as pl
+import umap
+import hdbscan
+import plotly.express as px
+```
+
+## Load embeddings
+
+```{python}
+#| label: load-data
+df = pl.read_parquet("econ_em_embeddings.parquet")
+embeddings = np.array(df["embedding"].to_list())
+
+print(f"{df.shape[0]} papers, {embeddings.shape[1]}-dimensional embeddings")
+print(f"Date range: {df['published'].min()} to {df['published'].max()}")
+```
+
+## UMAP: 4096-d → 2-d
+
+UMAP (Uniform Manifold Approximation and Projection) reduces dimensionality while
+preserving local neighborhood structure. Think of it as nonlinear PCA — PCA finds
+the best linear projections (like rotating a point cloud to see the most spread),
+while UMAP can "unfold" curved and twisted structures in high-dimensional space.
+
+Key parameters:
+
+- **n_neighbors**: How many nearest neighbors define "local" structure.
+  Larger values → more global structure preserved, smoother layout.
+- **min_dist**: How tightly points can pack in the 2D layout.
+  Smaller → tighter clusters, larger → more even spread.
+
+```{python}
+#| label: umap-reduce
+reducer = umap.UMAP(
+    n_components=2,
+    n_neighbors=30,
+    min_dist=0.0,       # let clusters pack tightly
+    metric="cosine",    # natural metric for embeddings
+    random_state=42,
+)
+coords = reducer.fit_transform(embeddings)
+
+df = df.with_columns(
+    pl.Series("umap_x", coords[:, 0]),
+    pl.Series("umap_y", coords[:, 1]),
+)
+```
+
+## HDBSCAN clustering
+
+HDBSCAN (Hierarchical Density-Based Spatial Clustering) finds clusters of varying
+density without requiring you to specify the number of clusters. Points that don't
+belong to any cluster are labeled as noise (-1).
+
+```{python}
+#| label: hdbscan-cluster
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=30,    # minimum papers to form a cluster
+    min_samples=15,         # conservative — avoids fragmenting small topics
+    metric="euclidean",     # applied to the 2D UMAP coordinates
+)
+labels = clusterer.fit_predict(coords)
+
+df = df.with_columns(pl.Series("cluster", labels))
+
+n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+n_noise = (labels == -1).sum()
+print(f"{n_clusters} clusters found, {n_noise} noise points ({n_noise/len(labels):.1%})")
+```
+
+## Cluster summary
+
+```{python}
+#| label: cluster-summary
+summary = (
+    df.filter(pl.col("cluster") >= 0)
+    .group_by("cluster")
+    .agg(
+        pl.col("title").count().alias("n_papers"),
+        pl.col("published").min().alias("earliest"),
+        pl.col("published").max().alias("latest"),
+    )
+    .sort("n_papers", descending=True)
+)
+summary
+```
+
+## Interactive scatter plot
+
+Hover over points to see paper titles and authors. Noise points (not assigned to
+any cluster) are shown in light gray.
+
+```{python}
+#| label: scatter-plot
+plot_df = df.with_columns(
+    pl.col("cluster").cast(pl.Utf8).alias("cluster_label"),
+    # Truncate long titles for hover readability
+    pl.col("title").str.slice(0, 80).alias("short_title"),
+    pl.col("authors").str.slice(0, 60).alias("short_authors"),
+)
+
+# Sort so noise points (-1) are drawn first (behind clusters)
+plot_df = plot_df.sort("cluster")
+
+fig = px.scatter(
+    plot_df.drop("embedding").to_pandas(),
+    x="umap_x",
+    y="umap_y",
+    color="cluster_label",
+    hover_data=["short_title", "short_authors", "published", "arxiv_id"],
+    title="econ.EM papers — UMAP + HDBSCAN clusters",
+    labels={"umap_x": "UMAP 1", "umap_y": "UMAP 2", "cluster_label": "Cluster"},
+    width=1000,
+    height=700,
+)
+
+fig.update_traces(marker=dict(size=4, opacity=0.7))
+fig.update_layout(legend=dict(title="Cluster"))
+fig.show()
+```
+
+## Representative papers per cluster
+
+For each cluster, find the paper closest to the cluster centroid (the most
+"typical" paper in the group).
+
+```{python}
+#| label: representative-papers
+representatives = []
+for c in sorted(df.filter(pl.col("cluster") >= 0)["cluster"].unique().to_list()):
+    mask = df["cluster"].to_numpy() == c
+    centroid = coords[mask].mean(axis=0)
+    dists = np.linalg.norm(coords[mask] - centroid, axis=1)
+    idx = np.where(mask)[0][dists.argmin()]
+    row = df.row(idx, named=True)
+    representatives.append({
+        "cluster": c,
+        "title": row["title"][:100],
+        "authors": row["authors"][:80],
+        "published": row["published"],
+    })
+
+pl.DataFrame(representatives)
+```
+
+## Higher-dimensional clustering (20-d)
+
+The 2D clusters above are based on a heavily compressed projection. Here we run a
+separate UMAP reduction to 20 dimensions — preserving much more of the original
+neighborhood structure — and cluster in that richer space. The scatter plot positions
+are the same as above; only the **colors** (cluster assignments) change.
+
+```{python}
+#| label: umap-20d
+reducer_20d = umap.UMAP(
+    n_components=20,
+    n_neighbors=30,
+    min_dist=0.0,
+    metric="cosine",
+    random_state=42,
+)
+coords_20d = reducer_20d.fit_transform(embeddings)
+```
+
+```{python}
+#| label: hdbscan-20d
+clusterer_20d = hdbscan.HDBSCAN(
+    min_cluster_size=30,
+    min_samples=15,
+    metric="euclidean",
+)
+labels_20d = clusterer_20d.fit_predict(coords_20d)
+
+df = df.with_columns(pl.Series("cluster_20d", labels_20d))
+
+n_clusters_20d = len(set(labels_20d)) - (1 if -1 in labels_20d else 0)
+n_noise_20d = (labels_20d == -1).sum()
+print(f"{n_clusters_20d} clusters found, {n_noise_20d} noise points ({n_noise_20d/len(labels_20d):.1%})")
+```
+
+### Cluster summary (20-d)
+
+```{python}
+#| label: cluster-summary-20d
+summary_20d = (
+    df.filter(pl.col("cluster_20d") >= 0)
+    .group_by("cluster_20d")
+    .agg(
+        pl.col("title").count().alias("n_papers"),
+        pl.col("published").min().alias("earliest"),
+        pl.col("published").max().alias("latest"),
+    )
+    .sort("n_papers", descending=True)
+)
+summary_20d
+```
+
+### Interactive scatter plot (20-d clusters)
+
+Same dot positions as above (2D UMAP), but colored by clusters found in the
+20-dimensional space.
+
+```{python}
+#| label: scatter-plot-20d
+plot_df_20d = df.with_columns(
+    pl.col("cluster_20d").cast(pl.Utf8).alias("cluster_label_20d"),
+    pl.col("title").str.slice(0, 80).alias("short_title"),
+    pl.col("authors").str.slice(0, 60).alias("short_authors"),
+)
+
+plot_df_20d = plot_df_20d.sort("cluster_20d")
+
+fig_20d = px.scatter(
+    plot_df_20d.drop("embedding").to_pandas(),
+    x="umap_x",
+    y="umap_y",
+    color="cluster_label_20d",
+    hover_data=["short_title", "short_authors", "published", "arxiv_id"],
+    title="econ.EM papers — 2D layout, clusters from 20-d UMAP + HDBSCAN",
+    labels={"umap_x": "UMAP 1", "umap_y": "UMAP 2", "cluster_label_20d": "Cluster"},
+    width=1000,
+    height=700,
+)
+
+fig_20d.update_traces(marker=dict(size=4, opacity=0.7))
+fig_20d.update_layout(legend=dict(title="Cluster"))
+fig_20d.show()
+```
+
+### Representative papers per cluster (20-d)
+
+```{python}
+#| label: representative-papers-20d
+representatives_20d = []
+for c in sorted(df.filter(pl.col("cluster_20d") >= 0)["cluster_20d"].unique().to_list()):
+    mask = df["cluster_20d"].to_numpy() == c
+    centroid = coords_20d[mask].mean(axis=0)
+    dists = np.linalg.norm(coords_20d[mask] - centroid, axis=1)
+    idx = np.where(mask)[0][dists.argmin()]
+    row = df.row(idx, named=True)
+    representatives_20d.append({
+        "cluster": c,
+        "title": row["title"][:100],
+        "authors": row["authors"][:80],
+        "published": row["published"],
+    })
+
+pl.DataFrame(representatives_20d)
+```
