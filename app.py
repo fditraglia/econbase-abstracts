@@ -12,8 +12,9 @@ R analogy: this is like a single-file Shiny app — UI + server logic in one
 place — but using Flask (Python's lightweight web framework) instead.
 """
 
+import bisect
 from collections import defaultdict
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, jsonify, render_template_string, request, redirect, url_for
 import numpy as np
 import pandas as pd
 
@@ -51,6 +52,20 @@ N_PAPERS = len(df)
 print(f"Loaded {N_PAPERS} papers, embedding matrix shape: {embeddings.shape}",
       flush=True)
 
+# Pre-sorted IDs for O(log n) prefix matching in autocomplete
+sorted_ids = sorted(df["arxiv_id"].tolist())
+
+# Co-author graph: author → set of all co-authors across the dataset
+# R analogy: like building an adjacency list from an edge list
+coauthor_graph = defaultdict(set)
+for _, row in df.iterrows():
+    authors = [a.strip() for a in row["authors"].split(",")]
+    for i, a in enumerate(authors):
+        for b in authors[i + 1:]:
+            coauthor_graph[a].add(b)
+            coauthor_graph[b].add(a)
+print(f"Built co-author graph: {len(coauthor_graph)} authors", flush=True)
+
 
 # ---------------------------------------------------------------------------
 # Recommendation logic
@@ -75,13 +90,14 @@ def find_similar(arxiv_id, top_k=50):
     return top_indices, top_sims
 
 
-def aggregate_referees(arxiv_id, agg_rule="mean-top-3", top_k_papers=50):
+def aggregate_referees(arxiv_id, agg_rule="mean-top-3", top_k_papers=50,
+                       exclude_coauthors=True):
     """
     Aggregate author scores from the top-k most similar papers.
 
     Each similar paper contributes its cosine similarity score to all of its
     authors. Then we aggregate per-author using the chosen rule and remove
-    the query paper's own authors.
+    the query paper's own authors (and optionally their co-authors).
 
     Returns a list of dicts sorted by score descending:
         [{"author": str, "score": float, "n_papers": int,
@@ -105,13 +121,19 @@ def aggregate_referees(arxiv_id, agg_rule="mean-top-3", top_k_papers=50):
                 "sim": float(sim),
             })
 
-    # Remove query paper's own authors
+    # Build exclusion set: query authors + optionally all their co-authors
     query_row = df.iloc[id_to_idx[arxiv_id]]
     query_authors = {a.strip() for a in query_row["authors"].split(",")}
+    if exclude_coauthors:
+        excluded = set(query_authors)
+        for a in query_authors:
+            excluded |= coauthor_graph.get(a, set())
+    else:
+        excluded = query_authors
 
     results = []
     for author, scores in author_scores.items():
-        if author in query_authors:
+        if author in excluded:
             continue
 
         scores_sorted = sorted(scores, reverse=True)
@@ -145,9 +167,13 @@ def aggregate_referees(arxiv_id, agg_rule="mean-top-3", top_k_papers=50):
 @app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "POST":
-        arxiv_id = request.form.get("arxiv_id", "").strip()
-        if arxiv_id:
-            return redirect(url_for("recommend", arxiv_id=arxiv_id))
+        query = request.form.get("arxiv_id", "").strip()
+        if query:
+            # If exact ID match, go straight to recommendations
+            if query in id_to_idx:
+                return redirect(url_for("recommend", arxiv_id=query))
+            # Otherwise, search
+            return redirect(url_for("search", q=query))
     return render_template_string(HOME_TEMPLATE, n_papers=N_PAPERS)
 
 
@@ -170,17 +196,46 @@ def recommend(arxiv_id):
     if n_show not in (10, 20, 50):
         n_show = 10
 
+    # Co-author exclusion: default on (first load has no query params)
+    # HTML checkboxes don't send a value when unchecked, so we check
+    # whether *any* query params were sent to distinguish first load
+    # from an explicit "unchecked" submission.
+    if request.args:
+        excl_coauth = request.args.get("excl_coauth") is not None
+    else:
+        excl_coauth = True  # default on first load
+
     # Get query paper info
     query_row = df.iloc[id_to_idx[arxiv_id]]
 
     # Get referees
-    referees = aggregate_referees(arxiv_id, agg_rule=agg_rule, top_k_papers=50)
+    referees = aggregate_referees(arxiv_id, agg_rule=agg_rule,
+                                  top_k_papers=50,
+                                  exclude_coauthors=excl_coauth)
 
-    # Get similar papers for display
-    top_indices, top_sims = find_similar(arxiv_id, top_k=n_show)
+    # Get similar papers for display — fetch extra so we can filter
+    top_indices, top_sims = find_similar(arxiv_id, top_k=max(n_show * 2, 50))
+
+    # Build excluded author set for filtering similar papers
+    if excl_coauth:
+        query_authors = {a.strip() for a in query_row["authors"].split(",")}
+        excluded_authors = set(query_authors)
+        for a in query_authors:
+            excluded_authors |= coauthor_graph.get(a, set())
+    else:
+        excluded_authors = None
+
     similar_papers = []
     for idx, sim in zip(top_indices, top_sims):
+        if len(similar_papers) >= n_show:
+            break
         row = df.iloc[idx]
+        # When co-author exclusion is on, skip papers where every author
+        # is in the excluded set
+        if excluded_authors is not None:
+            paper_authors = {a.strip() for a in row["authors"].split(",")}
+            if paper_authors <= excluded_authors:
+                continue
         similar_papers.append({
             "title": row["title"],
             "authors": row["authors"],
@@ -200,7 +255,83 @@ def recommend(arxiv_id):
         n_show=n_show,
         arxiv_id=arxiv_id,
         n_papers=N_PAPERS,
+        excl_coauth=excl_coauth,
     )
+
+
+@app.route("/api/autocomplete")
+def autocomplete():
+    """Return up to 10 matching papers as JSON for the autocomplete dropdown."""
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+
+    results = []
+    if q[0].isdigit():
+        # arXiv ID prefix match using bisect for O(log n) lookup
+        lo = bisect.bisect_left(sorted_ids, q)
+        for i in range(lo, min(lo + 10, len(sorted_ids))):
+            if not sorted_ids[i].startswith(q):
+                break
+            aid = sorted_ids[i]
+            row = df.iloc[id_to_idx[aid]]
+            results.append({
+                "arxiv_id": aid,
+                "title": row["title"],
+                "authors": row["authors"],
+            })
+    else:
+        # Case-insensitive substring match on title and authors
+        q_lower = q.lower()
+        for _, row in df.iterrows():
+            if (q_lower in row["title"].lower()
+                    or q_lower in row["authors"].lower()):
+                results.append({
+                    "arxiv_id": row["arxiv_id"],
+                    "title": row["title"],
+                    "authors": row["authors"],
+                })
+                if len(results) >= 10:
+                    break
+
+    return jsonify(results)
+
+
+@app.route("/search")
+def search():
+    """Search results page — show all papers matching the query."""
+    q = request.args.get("q", "").strip()
+    if not q:
+        return redirect(url_for("home"))
+
+    results = []
+    if q[0].isdigit():
+        lo = bisect.bisect_left(sorted_ids, q)
+        for i in range(lo, len(sorted_ids)):
+            if not sorted_ids[i].startswith(q):
+                break
+            aid = sorted_ids[i]
+            row = df.iloc[id_to_idx[aid]]
+            results.append({
+                "arxiv_id": aid,
+                "title": row["title"],
+                "authors": row["authors"],
+                "published": str(row["published"]),
+            })
+    else:
+        q_lower = q.lower()
+        for _, row in df.iterrows():
+            if (q_lower in row["title"].lower()
+                    or q_lower in row["authors"].lower()):
+                results.append({
+                    "arxiv_id": row["arxiv_id"],
+                    "title": row["title"],
+                    "authors": row["authors"],
+                    "published": str(row["published"]),
+                })
+
+    return render_template_string(SEARCH_TEMPLATE, q=q, results=results,
+                                  n_papers=N_PAPERS)
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +372,7 @@ STYLE = """
         margin: 20px 0;
     }
     form.search-form input[type="text"] {
-        flex: 1;
+        width: 100%;
         padding: 10px 14px;
         border: 1px solid #ccc;
         border-radius: 6px;
@@ -325,7 +456,127 @@ STYLE = """
     .paper-links a { margin-right: 8px; }
     .error { color: #dc2626; font-weight: 600; }
     .home-link { display: inline-block; margin-bottom: 16px; font-size: 0.9em; }
+    .search-wrap { position: relative; flex: 1; }
+    .autocomplete-list {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        z-index: 100;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .autocomplete-item {
+        padding: 8px 14px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+    }
+    .autocomplete-item:last-child { border-bottom: none; }
+    .autocomplete-item:hover, .autocomplete-item.active {
+        background: #e0edff;
+    }
+    .autocomplete-item .ac-title { font-weight: 600; font-size: 0.9em; }
+    .autocomplete-item .ac-meta { font-size: 0.8em; color: #666; }
+    .no-results { padding: 20px; text-align: center; color: #666; }
 </style>
+"""
+
+AUTOCOMPLETE_JS = """
+<script>
+(function() {
+    const input = document.querySelector('.search-form input[type="text"]');
+    const wrap = input.parentElement;
+    let dropdown = null;
+    let activeIdx = -1;
+    let debounceTimer = null;
+    let items = [];
+
+    function createDropdown() {
+        if (dropdown) return dropdown;
+        dropdown = document.createElement('div');
+        dropdown.className = 'autocomplete-list';
+        wrap.appendChild(dropdown);
+        return dropdown;
+    }
+
+    function closeDropdown() {
+        if (dropdown) { dropdown.remove(); dropdown = null; }
+        activeIdx = -1;
+        items = [];
+    }
+
+    function renderItems(data) {
+        if (!data.length) { closeDropdown(); return; }
+        const dd = createDropdown();
+        dd.innerHTML = data.map((d, i) =>
+            `<div class="autocomplete-item" data-idx="${i}" data-id="${d.arxiv_id}">
+                <div class="ac-title">${escHtml(d.title)}</div>
+                <div class="ac-meta">${escHtml(d.authors)} &middot; ${d.arxiv_id}</div>
+            </div>`
+        ).join('');
+        items = dd.querySelectorAll('.autocomplete-item');
+        activeIdx = -1;
+        items.forEach(item => {
+            item.addEventListener('mousedown', e => {
+                e.preventDefault();
+                window.location.href = '/recommend/' + item.dataset.id;
+            });
+        });
+    }
+
+    function setActive(idx) {
+        items.forEach(el => el.classList.remove('active'));
+        activeIdx = idx;
+        if (idx >= 0 && idx < items.length) {
+            items[idx].classList.add('active');
+            items[idx].scrollIntoView({block: 'nearest'});
+        }
+    }
+
+    function escHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        const q = input.value.trim();
+        if (!q) { closeDropdown(); return; }
+        debounceTimer = setTimeout(() => {
+            fetch('/api/autocomplete?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(renderItems)
+                .catch(() => closeDropdown());
+        }, 150);
+    });
+
+    input.addEventListener('keydown', e => {
+        if (!dropdown) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActive(Math.min(activeIdx + 1, items.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActive(Math.max(activeIdx - 1, -1));
+        } else if (e.key === 'Enter' && activeIdx >= 0) {
+            e.preventDefault();
+            window.location.href = '/recommend/' + items[activeIdx].dataset.id;
+        } else if (e.key === 'Escape') {
+            closeDropdown();
+        }
+    });
+
+    document.addEventListener('click', e => {
+        if (!wrap.contains(e.target)) closeDropdown();
+    });
+})();
+</script>
 """
 
 HOME_TEMPLATE = """
@@ -341,9 +592,14 @@ HOME_TEMPLATE = """
     <h1>Referee Recommender</h1>
     <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through February 19, 2026</p>
     <form class="search-form" method="post">
-        <input type="text" name="arxiv_id" placeholder="Enter an arXiv ID (e.g. 2301.12345)" autofocus>
+        <div class="search-wrap">
+            <input type="text" name="arxiv_id"
+                   placeholder="Search by arXiv ID, title, or author name"
+                   autofocus autocomplete="off">
+        </div>
         <button type="submit">Find referees</button>
     </form>
+    """ + AUTOCOMPLETE_JS + """
 </body>
 </html>
 """
@@ -365,6 +621,51 @@ ERROR_TEMPLATE = """
         <p class="error">arXiv ID "{{ arxiv_id }}" not found in the database.</p>
         <p>Make sure the ID matches a paper in the econ.EM category (e.g. 2301.12345).</p>
     </div>
+</body>
+</html>
+"""
+
+SEARCH_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Search: {{ q }} — Referee Recommender</title>
+    """ + STYLE + """
+</head>
+<body>
+    <a class="home-link" href="/">&larr; Back to search</a>
+    <h1>Referee Recommender</h1>
+    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through February 19, 2026</p>
+
+    <form class="search-form" method="post" action="/">
+        <div class="search-wrap">
+            <input type="text" name="arxiv_id" value="{{ q }}"
+                   placeholder="Search by arXiv ID, title, or author name"
+                   autofocus autocomplete="off">
+        </div>
+        <button type="submit">Find referees</button>
+    </form>
+    """ + AUTOCOMPLETE_JS + """
+
+    <h2>Search results for "{{ q }}"</h2>
+    {% if results %}
+    <div class="paper-list">
+        {% for p in results %}
+        <div class="paper-item">
+            <a class="title" href="/recommend/{{ p.arxiv_id }}">{{ p.title }}</a>
+            <p class="meta">{{ p.authors }}</p>
+            <p class="meta">Published: {{ p.published }} &middot; arXiv:{{ p.arxiv_id }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-results">
+        <p>No papers found matching "{{ q }}".</p>
+        <p>Try searching by arXiv ID (e.g. 2301.12345), paper title, or author name.</p>
+    </div>
+    {% endif %}
 </body>
 </html>
 """
@@ -409,6 +710,13 @@ RECOMMEND_TEMPLATE = """
                 <option value="50" {{ "selected" if n_show == 50 }}>50</option>
             </select>
         </div>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" name="excl_coauth" value="1"
+                       {{ "checked" if excl_coauth }}>
+                <strong>Exclude co-authors</strong>
+            </label>
+        </div>
         <button type="submit">Update</button>
     </form>
 
@@ -447,7 +755,7 @@ RECOMMEND_TEMPLATE = """
     </table>
 
     <!-- Similar papers -->
-    <h2>Most Similar Papers</h2>
+    <h2>Most Similar Papers{{ " (excluding co-authored)" if excl_coauth }}</h2>
     <div class="paper-list">
         {% for p in similar_papers %}
         <div class="paper-item">
