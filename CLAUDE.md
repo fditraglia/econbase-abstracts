@@ -4,21 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Embed and cluster econometrics paper abstracts from arXiv (category econ.EM) using Qwen3-Embedding-8B via Ollama. The owner is an R user learning Python — code comments include R analogies for key concepts.
+Embed and cluster econometrics paper abstracts from arXiv (category econ.EM) using Qwen3-Embedding-8B via Ollama, then serve a referee-recommender web app via Flask. The owner is an R user learning Python — code comments include R analogies for key concepts.
 
 ## Commands
 
 ```bash
 uv run fetch_abstracts.py    # Pull all econ.EM papers from arXiv → econ_em_papers.parquet
 uv run embed_abstracts.py    # Embed papers via Ollama → econ_em_embeddings.parquet (~30 min)
+uv run python app.py         # Run Flask app locally at http://localhost:5000
 ```
 
 Embedding requires Ollama running locally: `ollama pull qwen3-embedding`
+
+## Deployment (Render)
+
+The Flask app is deployed on Render. It auto-deploys on push to GitHub.
+
+- **Build command**: `pip install -r requirements.txt`
+- **Start command**: `gunicorn app:app`
+- **Parquet files**: Tracked via Git LFS (too large for regular Git). Run `git lfs install` after cloning.
 
 ## Pipeline and data flow
 
 1. **fetch_abstracts.py** → `econ_em_papers.parquet`: Fetches all econ.EM papers (primary + cross-listed), cleans LaTeX to Unicode, stores both raw and cleaned text
 2. **embed_abstracts.py** → `econ_em_embeddings.parquet`: Reads papers parquet, embeds title+abstract via Ollama's HTTP API, appends 4096-dim embedding column
+3. **app.py**: Flask web app — loads embeddings parquet, serves referee recommendations via cosine similarity + author aggregation
 
 ## Key design decisions
 

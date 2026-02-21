@@ -14,9 +14,12 @@ place — but using Flask (Python's lightweight web framework) instead.
 
 import bisect
 from collections import defaultdict
+import os
 from flask import Flask, jsonify, render_template_string, request, redirect, url_for
 import numpy as np
 import pandas as pd
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -34,7 +37,7 @@ app = Flask(__name__)
 # runs once when the app starts, not on every request.
 
 print("Loading embeddings...", flush=True)
-df = pd.read_parquet("econ_em_embeddings.parquet")
+df = pd.read_parquet(os.path.join(BASE_DIR, "econ_em_embeddings.parquet"))
 
 # Build the embedding matrix: each row is a paper's 4096-dim vector
 embeddings = np.array(df["embedding"].tolist(), dtype=np.float32)

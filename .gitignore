@@ -10,5 +10,4 @@ wheels/
 .venv
 
 # Generated data and outputs
-*.parquet
-cluster_papers.html
+# (parquet files are now tracked via Git LFS)
