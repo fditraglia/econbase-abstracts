@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Per-machine Claude Code settings
+.claude/settings.local.json
+
 # Generated data and outputs
 # (parquet files are now tracked via Git LFS)
 cluster_papers.html
