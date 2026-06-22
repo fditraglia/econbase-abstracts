@@ -48,3 +48,7 @@ The `hf` remote points to `git@hf.co:spaces/fditraglia/referee-recommender`. The
 Project notes live in the **SQARE-EconBase** notebook under Research Projects. Key notes:
 - "ArXiv Econometrics Embeddings: Project Reference" — canonical project plan
 - "Python & Toolchain Learning Log" — running log of Python/toolchain concepts learned (update as we go)
+
+## Project context
+
+This repository is one component of the **EconBase / SQARE** project. For the roadmap, how the repositories relate, and current priorities, see the private coordination repo **`fditraglia/econbase-sqare-docs`**.
