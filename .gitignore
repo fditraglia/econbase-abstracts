@@ -15,3 +15,11 @@ wheels/
 # Generated data and outputs
 # (parquet files are now tracked via Git LFS)
 cluster_papers.html
+
+# Experiment intermediates — regenerate with experiments/*.py
+experiments/*.npy
+experiments/intro_embeddings.parquet
+experiments/report_pairs.csv
+experiments/*.log
+experiments/embedding-experiment.html
+experiments/embedding-experiment_files/

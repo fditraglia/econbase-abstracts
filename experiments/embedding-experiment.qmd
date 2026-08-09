@@ -1,0 +1,199 @@
+---
+title: "Do longer texts embed better?"
+subtitle: "Abstracts versus introductions for finding related econometrics papers"
+author: "Francis DiTraglia"
+date: 2026-08-09
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+    fig-width: 7
+    fig-height: 4
+    code-fold: true
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(knitr)
+
+ABSTRACT <- "#2a78d6"  # validated categorical slots 1 and 2
+INTRO    <- "#eb6834"
+
+theme_report <- function() {
+  theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey92", linewidth = 0.3),
+      axis.title = element_text(color = "grey30"),
+      axis.text = element_text(color = "grey40"),
+      plot.title = element_text(face = "bold", size = 12),
+      plot.subtitle = element_text(color = "grey35", size = 10),
+      legend.position = "top",
+      legend.title = element_blank()
+    )
+}
+
+pairs    <- read_csv("report_pairs.csv", show_col_types = FALSE)
+overlap  <- read_csv("report_overlap.csv", show_col_types = FALSE)
+armagree <- read_csv("report_armagree.csv", show_col_types = FALSE)
+res      <- jsonlite::fromJSON("results.json")
+```
+
+## The question
+
+The referee-recommender in `econbase-abstracts` embeds each paper's title and abstract with Qwen3-Embedding-8B and ranks candidates by cosine similarity. The open question recorded on 4 August was whether embedding *more* of each paper would find better related work. Whole papers were the original proposal; introductions are the more natural first comparison, being a uniform genre at a uniform length and comfortably inside the model's context window.
+
+This note reports a preliminary answer. It is preliminary in a specific sense set out under [Limitations].
+
+## Cost, measured
+
+Whole-paper embedding was ruled out on cost before any comparison was run. These are measured timings on an M4 Max laptop, Qwen3-Embedding-8B under Ollama at Q4\_K\_M, one paper per request.
+
+```{r timing}
+tibble::tibble(
+  Representation = c("Title + abstract", "Title + introduction", "Whole paper"),
+  `Median length (words)` = c(174, 1133, 11156),
+  `Seconds per paper` = c(0.42, 3.11, 75.7),
+  `Corpus of 5,200 (hours)` = c(0.6, 4.5, 109.3)
+) |>
+  kable(align = "lrrr", digits = c(0, 0, 2, 1))
+```
+
+Cost grows faster than length. An introduction is 6.5 times an abstract in words and 7.4 times in seconds, which is roughly proportional. A whole paper is 10 times an introduction in words but 24 times in seconds, because attention cost is quadratic in sequence length. Embedding the corpus at whole-paper resolution is a three-to-six day job on a laptop, so it belongs on ARC if it is ever wanted. Introductions are an afternoon.
+
+## Design
+
+Every comparison below runs over the same 536 papers — those holding both an existing abstract embedding and a cleanly extracted introduction. Introductions came from the LaTeX source via `pangram-arxiv/scripts/extract_intros.py`, restricted to papers with a section actually titled "Introduction" and between 300 and 4,000 words.
+
+Both arms are embedded identically: title, newline, body text, no instruction prefix, following the Qwen3 document convention.
+
+Scoring an unsupervised representation needs some external signal, and there is no ground truth for whether two papers are related. What is available is a second opinion of independent provenance: **bibliographic coupling**, the overlap between two papers' reference lists. If a representation is picking up genuine intellectual proximity, papers it calls similar should tend to cite the same works.
+
+Coupling was computed from the parsed bibliographies in Martin's citation-intensity database. Each reference is keyed by first-author surname, year, and a normalized title prefix, and two papers are coupled to the extent their key sets overlap, measured by Jaccard similarity. This never requires resolving a reference to a corpus paper, which matters because those identifiers are largely unrecoverable — see [What did not work].
+
+## Coupling carries signal
+
+Before using coupling to judge the two arms, it is worth confirming it says anything at all. It does. Pairs that share at least one reference sit visibly higher in abstract-embedding similarity than pairs that share none.
+
+```{r coupled-dist}
+#| fig-cap: "Abstract-embedding cosine similarity, split by whether the two papers share any reference. 143,380 pairs; 8,038 share at least one."
+pairs |>
+  filter(!is.na(coupling), !is.na(abstract_cos)) |>
+  mutate(grp = if_else(coupling > 0, "Share ≥ 1 reference", "Share no reference")) |>
+  ggplot(aes(abstract_cos, fill = grp, color = grp)) +
+  geom_density(alpha = 0.28, linewidth = 0.6) +
+  scale_fill_manual(values = c("Share ≥ 1 reference" = ABSTRACT,
+                               "Share no reference" = "grey55")) +
+  scale_color_manual(values = c("Share ≥ 1 reference" = ABSTRACT,
+                                "Share no reference" = "grey55")) +
+  labs(title = "Papers that cite the same work embed closer together",
+       subtitle = "Mean cosine 0.507 for coupled pairs against 0.421 for uncoupled",
+       x = "Cosine similarity (abstract embedding)", y = "Density") +
+  theme_report()
+```
+
+Across all pairs the rank correlation between abstract cosine and coupling is 0.209, rising to 0.373 among pairs that share at least one reference. Coupling is a noisy rater, but not an empty one.
+
+A separate consequence is worth recording, because it bears on a grant deliverable. The network database has two strands, semantic similarity from embeddings and bibliometric similarity from the citation graph, and the team has assumed they are complementary. They are: over the top ten neighbors of each paper, the two measures agree on **2.26 of 10**. Roughly three quarters of what each returns, the other does not.
+
+## The two arms differ, moderately
+
+```{r arm-agreement}
+#| fig-cap: "Share of each paper's top-k neighbors that the abstract and introduction representations agree on, averaged over 536 papers."
+armagree |>
+  ggplot(aes(factor(k), share)) +
+  geom_col(fill = ABSTRACT, width = 0.62) +
+  geom_text(aes(label = scales::percent(share, accuracy = 1)),
+            vjust = -0.6, size = 3.4, color = "grey30") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.85),
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Abstracts and introductions return overlapping, not identical, neighbors",
+       subtitle = "Agreement is lowest at the top of the list, where it matters most",
+       x = "k (neighbors considered)", y = "Share shared") +
+  theme_report()
+```
+
+The two representations name the same nearest paper for 297 of 536 queries, or 55%. Their similarity scores correlate at 0.866 across all 143,380 pairs. Mean cosine is 0.426 for abstracts and 0.421 for introductions, so the extra text does not visibly compress the similarity distribution the way whole-paper embeddings would be expected to.
+
+So there is something to argue about. For roughly two papers in five, switching representation changes which paper the tool would show first.
+
+## But neither is better
+
+Judged against coupling, the two arms are indistinguishable.
+
+```{r headline}
+#| fig-cap: "Agreement with bibliographic coupling. Left: rank correlation over pairs sharing at least one reference. Right: share of each paper's top-k neighbors also in coupling's top-k."
+p1 <- tibble::tibble(
+  arm = c("Abstract", "Introduction"),
+  value = c(res$spearman_with_coupling_on_coupled_pairs$abstract,
+            res$spearman_with_coupling_on_coupled_pairs$intro)
+) |>
+  ggplot(aes(arm, value, fill = arm)) +
+  geom_col(width = 0.55) +
+  geom_text(aes(label = sprintf("%.3f", value)), vjust = -0.6, size = 3.6, color = "grey30") +
+  scale_fill_manual(values = c(Abstract = ABSTRACT, Introduction = INTRO), guide = "none") +
+  scale_y_continuous(limits = c(0, 0.46), expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Rank correlation with coupling", x = NULL, y = "Spearman") +
+  theme_report()
+
+p2 <- overlap |>
+  group_by(k, arm) |>
+  summarise(m = mean(overlap), .groups = "drop") |>
+  mutate(arm = recode(arm, abstract = "Abstract", intro = "Introduction")) |>
+  ggplot(aes(factor(k), m, fill = arm)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.62) +
+  scale_fill_manual(values = c(Abstract = ABSTRACT, Introduction = INTRO)) +
+  scale_y_continuous(labels = scales::percent, expand = expansion(mult = c(0, 0.08))) +
+  labs(title = "Top-k overlap with coupling", x = "k", y = "Share of top-k shared") +
+  theme_report()
+
+patchwork_ok <- requireNamespace("patchwork", quietly = TRUE)
+if (patchwork_ok) print(patchwork::wrap_plots(p1, p2, widths = c(1, 1.5))) else {print(p1); print(p2)}
+```
+
+```{r headline-table}
+tibble::tibble(
+  Measure = c("Rank correlation with coupling (coupled pairs)",
+              "Top-10 neighbors shared with coupling (of 10)"),
+  Abstract = c(res$spearman_with_coupling_on_coupled_pairs$abstract,
+               res$top10_overlap_with_coupling$abstract),
+  Introduction = c(res$spearman_with_coupling_on_coupled_pairs$intro,
+                   res$top10_overlap_with_coupling$intro)
+) |>
+  kable(align = "lrr", digits = 3)
+```
+
+The gap is 0.002 in rank correlation and 0.11 papers out of ten in overlap. Neither is a difference worth acting on. Six to seven times the compute buys *different* neighbors, not better ones.
+
+## What did not work
+
+Two intended methods failed, and both failures are informative for other parts of the project.
+
+**Citation links as relevance labels.** The original plan scored each arm by how well it retrieved the papers a query paper actually cites. Those links turned out to be largely unrecoverable. OpenAlex records references in a `referenced_works` field that `econ-corpus` already harvests, but of 100 econ.EM arXiv papers sampled across 2019 to 2026, OpenAlex returned 84 records and only **11 carried any references at all**. The field is effectively empty for preprints. Working instead from the LaTeX bibliographies runs into a second obstacle: econometrics reference lists rarely carry machine identifiers, with 2.6% of sampled entries holding an arXiv ID and 11.4% a DOI, and the citation-intensity database stores only the header line of BibTeX entries, discarding the body along with any identifier it held. Coupling sidesteps all of this by asking only whether two bibliographies overlap.
+
+**Human triplet judgments.** The intended anchor was human judgment, elicited as triplets: given a query paper, which of two candidates is more closely related. Triplets were sampled where the two arms disagreed most, on the reasoning that those are most informative. That reasoning was wrong. Cases where the arms disagree most are cases where one candidate is related by method and the other by application, and there is no fact of the matter about which is closer. Of the first five judgments, three were marked "too close to call." A usable elicitation would compare whole ranked lists rather than forcing a choice between incommensurable pairs, and would draw on a pool large enough that a genuinely good neighbor is present.
+
+## Limitations
+
+The pool is 536 papers, not the corpus. It is the intersection of papers already embedded (through February 2026) with papers whose introductions had been extracted for a different project, and that intersection has a hole between 2022 and 2024. Neighbor lists drawn from a thin, temporally gappy pool are worse than production lists would be, which adds noise to every comparison here.
+
+Coupling is one rater and a noisy one. The reference key will miss variant spellings and mis-parsed entries and will occasionally collide. Noise attenuates the measured agreement for both arms alike, so it is unlikely to reverse the finding, but it could mask a small real difference.
+
+Only 5.6% of pairs share any reference, so the rank correlations are computed on a sparse subset of the pair space.
+
+## What follows
+
+Nothing here supports embedding more text for the referee recommender. Abstracts remain the default, and the case for that is stronger than "they are cheaper": an abstract is a compression of the paper written by the person who understands it best, for the express purpose of telling a reader whether the paper is relevant to them, which is the retrieval task itself.
+
+Two findings belong to other people's work rather than this experiment. The sparsity of OpenAlex `referenced_works` for preprints bears on any plan to build a citation graph from the harvested snapshots. The truncation of BibTeX entries in the citation-intensity database looks like a small fix that would make that dataset considerably more useful.
+
+If the question is worth revisiting, the version worth running is a comparison of ranked lists over a full-corpus pool, with introductions extracted for all 4,650 papers whose LaTeX is already held locally.

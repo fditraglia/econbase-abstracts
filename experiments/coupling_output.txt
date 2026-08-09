@@ -1,0 +1,10 @@
+pool: 649 papers
+pool papers with >=5 keyed references: 536
+
+pairs: 143380   with any shared reference: 8038 (5.6%)
+Spearman(cosine, coupling), all pairs      : 0.209
+Spearman(cosine, coupling), coupled pairs  : 0.373
+mean cosine | coupled   : 0.507
+mean cosine | uncoupled : 0.421
+
+mean overlap of top-10 neighbours (cosine vs coupling): 2.26 of 10

@@ -1,0 +1,5 @@
+{"qid":"2006.02846","left":"2601.16749","right":"2512.10076","left_arm":"abstract","right_arm":"intro","side":"T","chosen_arm":"tie","ts":1786303896769}
+{"qid":"2511.13875","left":"2602.15690","right":"2510.11139","left_arm":"abstract","right_arm":"intro","side":"T","chosen_arm":"tie","ts":1786303933416}
+{"qid":"2512.13400","left":"2510.10527","right":"2602.05099","left_arm":"abstract","right_arm":"intro","side":"L","chosen_arm":"abstract","ts":1786303979013}
+{"qid":"2602.16310","left":"2511.00727","right":"2601.09888","left_arm":"intro","right_arm":"abstract","side":"T","chosen_arm":"tie","ts":1786304038051}
+{"qid":"2512.21176","left":"2512.08759","right":"2509.12538","left_arm":"abstract","right_arm":"intro","side":"R","chosen_arm":"intro","ts":1786304190564}

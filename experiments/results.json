@@ -1,0 +1,24 @@
+{
+ "papers": 536,
+ "pairs": 143380,
+ "pairs_sharing_a_reference": 8038,
+ "arms_agree_top1": 297,
+ "mean_topk_overlap_between_arms": {
+  "5": 2.85,
+  "10": 6.02,
+  "20": 12.58
+ },
+ "spearman_between_arms": 0.866,
+ "mean_cosine": {
+  "abstract": 0.426,
+  "intro": 0.421
+ },
+ "spearman_with_coupling_on_coupled_pairs": {
+  "abstract": 0.373,
+  "intro": 0.371
+ },
+ "top10_overlap_with_coupling": {
+  "abstract": 2.25,
+  "intro": 2.36
+ }
+}
