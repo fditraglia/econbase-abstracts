@@ -14,7 +14,15 @@ import numpy as np, polars as pl
 from scipy.stats import spearmanr
 
 HERE = Path(__file__).resolve().parent
-DB = Path.home() / "Downloads" / "citation_intensity_citation_intensity.db"
+# Martin's citation-intensity database, in the layout econ-corpus/docs/00-cold-start.md
+# prescribes: gcloud storage rsync -r gs://econbase-arxiv-corpus/ ~/corpus/arxiv/
+DB = Path.home() / "corpus" / "arxiv" / "citation_intensity" / "citation_intensity.db"
+if not DB.exists():
+    raise SystemExit(
+        f"citation-intensity database not found at {DB}\n"
+        "Fetch it with:  gcloud storage rsync -r "
+        "gs://econbase-arxiv-corpus/citation_intensity/ ~/corpus/arxiv/citation_intensity/"
+    )
 
 emb = pl.read_parquet(HERE.parent / "econ_em_embeddings.parquet")
 emb = emb.with_columns(pl.col("arxiv_id").str.replace(r"v\d+$", "").alias("base_id"))

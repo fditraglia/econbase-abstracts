@@ -7,9 +7,18 @@ abstracts, not better ones, at six to seven times the compute.
 
 ## Reproducing
 
-Requires Ollama with `qwen3-embedding` pulled, and the citation-intensity
-database at `~/Downloads/citation_intensity_citation_intensity.db`
-(from `gs://econbase-arxiv-corpus/citation_intensity/`).
+Requires Ollama with `qwen3-embedding` pulled, and Martin's arXiv corpus in the
+layout `econ-corpus/docs/00-cold-start.md` prescribes:
+
+```bash
+gcloud storage rsync -r gs://econbase-arxiv-corpus/citation_intensity/ ~/corpus/arxiv/citation_intensity/
+gcloud storage rsync -r gs://econbase-arxiv-corpus/metadata/            ~/corpus/arxiv/metadata/
+```
+
+`coupling.py` reads `~/corpus/arxiv/citation_intensity/citation_intensity.db`
+(254 MB) and says so if it is absent. The metadata database beside it
+(`arxiv_econ_papers.db`, 10 MB) carries the corpus through 6 August 2026, later
+than the February snapshot the abstract embeddings were built from.
 
 ```bash
 uv run embed_intros.py        # ~35 min, resumable — writes intro_embeddings.parquet
