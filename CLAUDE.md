@@ -26,6 +26,8 @@ git push hf master:main    # HF Spaces (SSH remote)
 
 The `hf` remote points to `git@hf.co:spaces/fditraglia/referee-recommender`. The Dockerfile runs gunicorn on port 7860 (HF requirement). Parquet files are tracked via Git LFS.
 
+The Space mirrors whatever tree is pushed, so removing a file from the repository removes it from the Space at the next deploy — no separate deletion step. It also means the Space can lag: it serves the last tree pushed to it, not the last commit made here. Check with `git ls-remote hf` when it matters. As of 15 August 2026 the Space is four commits behind and still serving `.claude/settings.local.json`, untracked here in `c47a18b`; the next deploy clears it.
+
 ## Pipeline and data flow
 
 1. **fetch_abstracts.py** → `econ_em_papers.parquet`: Fetches all econ.EM papers (primary + cross-listed), cleans LaTeX to Unicode, stores both raw and cleaned text
