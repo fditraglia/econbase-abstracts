@@ -5,6 +5,18 @@ Does embedding more of a paper find better related work? Findings are in
 the short version is that introductions return different neighbors from
 abstracts, not better ones, at six to seven times the compute.
 
+> **The coupling numbers here need re-running (noted 15 August 2026).**
+> `coupling.py` reads `~/corpus/arxiv/citation_intensity/citation_intensity.db`,
+> which the corpus has since superseded with `citations/citations.db`. The bucket
+> README asks that nothing new be built against the old path: an audit found seven
+> classes of extraction bug in it, each reproducing on real papers, among them 30%
+> of multi-file papers losing their body text past one `\input` level and 12.5%
+> counting appendix citations as main text. Every figure in this directory that
+> involves bibliographic coupling inherits that. The rewrite also removes the need
+> to reconstruct coupling by hand — `citations.db` ships a `related_papers` table
+> and a per-reference `composite_index`. See
+> `econ-corpus/docs/06-citations-pipeline.md`.
+
 ## Reproducing
 
 Requires Ollama with `qwen3-embedding` pulled, and Martin's arXiv corpus in the

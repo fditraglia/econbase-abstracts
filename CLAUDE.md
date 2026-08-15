@@ -43,6 +43,28 @@ The `hf` remote points to `git@hf.co:spaces/fditraglia/referee-recommender`. The
 
 `arxiv_id`, `authors`, `title_raw`, `abstract_raw`, `title`, `abstract`, `primary_category`, `categories`, `is_primary_econ_em`, `published`, `url`, `embedding` (list of 4096 floats)
 
+## Corpus data (the `econ-corpus` bucket)
+
+The team's arXiv corpus is the upstream source for paper metadata and for anything read beyond the abstract. It lives in Google Cloud Storage, **not** on Google Drive or Dropbox, and is rebuilt daily at 03:00 UTC by a cron job on the IONOS server.
+
+The Google Cloud CLI is installed at `~/google-cloud-sdk` (Google's standalone installer, not the Homebrew cask, which has given trouble). Pull the three directories that matter — under 1 GB:
+
+```bash
+for d in metadata citations serve; do
+  gcloud storage rsync -r gs://econbase-arxiv-corpus/$d/ ~/corpus/arxiv/$d/
+done
+```
+
+| Path | What it holds |
+|---|---|
+| `metadata/arxiv_econ_papers.db` | one row per econ.EM paper, including cross-listed; the source for the embedding refresh |
+| `citations/citations.db` | main text, parsed references, weighted citation intensity (`composite_index`), `related_papers`, `related_authors_sym` |
+| `serve/main-text/<id>.txt.gz` | main text per paper, title through conclusion, appendix dropped |
+
+**Skip two directories.** `source_cache/` is 8.3 GB of raw LaTeX and is unnecessary now that main text is extracted upstream. `citation_intensity/` is superseded by `citations/citations.db` — an audit found seven classes of extraction bug in it, and the bucket README asks that nothing new be built against it. `experiments/coupling.py` still reads it; see `experiments/README.md`.
+
+Method and schema for the citation data are documented in `econ-corpus/docs/06-citations-pipeline.md`. Read it before trusting a number from `citations.db`.
+
 ## Joplin notes (MCP)
 
 Project notes live in the **SQARE-EconBase** notebook under Research Projects. Key notes:
