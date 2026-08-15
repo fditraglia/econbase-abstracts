@@ -61,9 +61,13 @@ done
 | `citations/citations.db` | main text, parsed references, weighted citation intensity (`composite_index`), `related_papers`, `related_authors_sym` |
 | `serve/main-text/<id>.txt.gz` | main text per paper, title through conclusion, appendix dropped |
 
-**Skip two directories.** `source_cache/` is 8.3 GB of raw LaTeX and is unnecessary now that main text is extracted upstream. `citation_intensity/` is superseded by `citations/citations.db` — an audit found seven classes of extraction bug in it, and the bucket README asks that nothing new be built against it. `experiments/coupling.py` still reads it; see `experiments/README.md`.
+**Skip two directories.** `source_cache/` is 8.3 GB of raw LaTeX and is unnecessary now that main text is extracted upstream. `citation_intensity/` has been superseded by `citations/citations.db`; the bucket README asks that nothing new be built against it. `experiments/coupling.py` still reads it, so its figures predate the replacement — see `experiments/README.md`.
 
-Method and schema for the citation data are documented in `econ-corpus/docs/06-citations-pipeline.md`. Read it before trusting a number from `citations.db`.
+Method and schema for the citation data are documented in the `econ-corpus` repository, which also owns any question about how a measure is defined. Read that before trusting a number from `citations.db`.
+
+## This repository is public
+
+The GitHub repository is public, and the whole working tree is also pushed to a public Hugging Face Space, `CLAUDE.md` included. Everything written here is published, so keep notes operational — which data to use, which is superseded, what needs re-running — and keep assessments of other people's code and other repositories' internal history in the private coordination repo instead.
 
 ## Joplin notes (MCP)
 

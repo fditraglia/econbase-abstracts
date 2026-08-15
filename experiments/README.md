@@ -6,16 +6,14 @@ the short version is that introductions return different neighbors from
 abstracts, not better ones, at six to seven times the compute.
 
 > **The coupling numbers here need re-running (noted 15 August 2026).**
-> `coupling.py` reads `~/corpus/arxiv/citation_intensity/citation_intensity.db`,
-> which the corpus has since superseded with `citations/citations.db`. The bucket
-> README asks that nothing new be built against the old path: an audit found seven
-> classes of extraction bug in it, each reproducing on real papers, among them 30%
-> of multi-file papers losing their body text past one `\input` level and 12.5%
-> counting appendix citations as main text. Every figure in this directory that
-> involves bibliographic coupling inherits that. The rewrite also removes the need
-> to reconstruct coupling by hand — `citations.db` ships a `related_papers` table
-> and a per-reference `composite_index`. See
-> `econ-corpus/docs/06-citations-pipeline.md`.
+> `coupling.py` reads `~/corpus/arxiv/citation_intensity/citation_intensity.db`.
+> The corpus has since replaced that database with `citations/citations.db`, built
+> by a different and more carefully tested extraction pipeline, and asks that
+> nothing new be built against the old path. Every figure in this directory that
+> involves bibliographic coupling was computed before the replacement and should be
+> redone against it. The replacement also removes the need to reconstruct coupling
+> by hand: it ships parsed references already matched into the corpus, a
+> per-reference intensity index, and a `related_papers` table.
 
 ## Reproducing
 
