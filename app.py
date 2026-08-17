@@ -78,6 +78,13 @@ for _, row in df.iterrows():
             coauthor_graph[b].add(a)
 print(f"Built co-author graph: {len(coauthor_graph)} authors", flush=True)
 
+# The corpus date is read off the data, never written down. A hardcoded date is
+# right until the first refresh and wrong silently ever after -- this one said
+# 19 February 2026 for the six months the corpus was already past it.
+CORPUS_THROUGH = pd.to_datetime(df["published"]).max().strftime("%B %-d, %Y")
+app.jinja_env.globals["corpus_through"] = CORPUS_THROUGH
+print(f"Corpus runs through {CORPUS_THROUGH}", flush=True)
+
 
 # ---------------------------------------------------------------------------
 # Recommendation logic
@@ -618,7 +625,7 @@ HOME_TEMPLATE = """
 </head>
 <body>
     <h1>Referee Recommender</h1>
-    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through February 19, 2026</p>
+    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through {{ corpus_through }}</p>
     <form class="search-form" method="post">
         <div class="search-wrap">
             <input type="text" name="arxiv_id"
@@ -644,7 +651,7 @@ ERROR_TEMPLATE = """
 <body>
     <a class="home-link" href="/">&larr; Back to search</a>
     <h1>Referee Recommender</h1>
-    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through February 19, 2026</p>
+    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through {{ corpus_through }}</p>
     <div class="card">
         <p class="error">arXiv ID "{{ arxiv_id }}" not found in the database.</p>
         <p>Make sure the ID matches a paper in the econ.EM category (e.g. 2301.12345).</p>
@@ -665,7 +672,7 @@ SEARCH_TEMPLATE = """
 <body>
     <a class="home-link" href="/">&larr; Back to search</a>
     <h1>Referee Recommender</h1>
-    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through February 19, 2026</p>
+    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through {{ corpus_through }}</p>
 
     <form class="search-form" method="post" action="/">
         <div class="search-wrap">
@@ -710,7 +717,7 @@ RECOMMEND_TEMPLATE = """
 <body>
     <a class="home-link" href="/">&larr; Back to search</a>
     <h1>Referee Recommender</h1>
-    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through February 19, 2026</p>
+    <p class="subtitle">{{ n_papers | number_format }} econ.EM papers from arXiv through {{ corpus_through }}</p>
 
     <!-- Query paper card -->
     <h2>Query Paper</h2>
