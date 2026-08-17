@@ -1,46 +1,52 @@
-# Abstract versus introduction embeddings
+# Comparing ways of finding related work
 
-Does embedding more of a paper find better related work? Findings are in
-**`embedding-experiment.qmd`** (render for the report with figures and tables);
-the short version is that introductions return different neighbors from
-abstracts, not better ones, at six to seven times the compute.
+Two questions, both judged against the citation data in `citations.db`.
 
-> **The coupling numbers here need re-running (noted 15 August 2026).**
-> `coupling.py` reads `~/corpus/arxiv/citation_intensity/citation_intensity.db`.
-> The corpus has since replaced that database with `citations/citations.db`, built
-> by a different and more carefully tested extraction pipeline, and asks that
-> nothing new be built against the old path. Every figure in this directory that
-> involves bibliographic coupling was computed before the replacement and should be
-> redone against it. The replacement also removes the need to reconstruct coupling
-> by hand: it ships parsed references already matched into the corpus, a
-> per-reference intensity index, and a `related_papers` table.
+**Does embedding more of a paper find better related work?** Introductions come out
+ahead of abstracts by 0.11 of one neighbor in ten (95% interval 0.01 to 0.20,
+Wilcoxon p = 0.025) — a detectable advantage, too small to justify six to seven
+times the embedding cost. Keep abstracts. Run `abstracts_vs_intros_v2.py`; the
+figures with plots and tables are in `embedding-experiment.qmd`.
+
+**How much does embedding similarity differ from the citation measure?** They share
+about a fifth of what they name, at the paper level and the author level alike,
+while each ranks the other's picks far above chance. Run
+`compare_citation_embedding.py`. Written up in
+`econbase-sqare-docs/notes/2026-08-17-embedding-vs-citation.md`.
 
 ## Reproducing
 
-Requires Ollama with `qwen3-embedding` pulled, and Martin's arXiv corpus in the
-layout `econ-corpus/docs/00-cold-start.md` prescribes:
+Requires Ollama with the frozen embedding model (`qwen3-embedding-econbase:v1`) and
+the corpus in the layout `econ-corpus/docs/00-cold-start.md` prescribes:
 
 ```bash
-gcloud storage rsync -r gs://econbase-arxiv-corpus/citation_intensity/ ~/corpus/arxiv/citation_intensity/
-gcloud storage rsync -r gs://econbase-arxiv-corpus/metadata/            ~/corpus/arxiv/metadata/
+for d in metadata citations serve; do
+  gcloud storage rsync -r gs://econbase-arxiv-corpus/$d/ ~/corpus/arxiv/$d/
+done
 ```
-
-`coupling.py` reads `~/corpus/arxiv/citation_intensity/citation_intensity.db`
-(254 MB) and says so if it is absent. The metadata database beside it
-(`arxiv_econ_papers.db`, 10 MB) carries the corpus through 6 August 2026, later
-than the February snapshot the abstract embeddings were built from.
 
 ```bash
-uv run embed_intros.py        # ~35 min, resumable — writes intro_embeddings.parquet
-uv run coupling.py            # bibliographic coupling + agreement with abstract cosine
-uv run compare_arms.py        # the head-to-head -> results.json
-uv run export_for_report.py   # tidy CSVs the report reads
-quarto render embedding-experiment.qmd
+uv run compare_citation_embedding.py   # -> comparison_results.json
+uv run abstracts_vs_intros_v2.py       # -> abstracts_vs_intros_v2.json
 ```
+
+Both read only local files, take a few minutes, and reproduce exactly.
+`compare_citation_embedding.py --limit N` runs a random subsample while developing.
+
+Introduction embeddings come from `embed_intros.py` (~35 min, resumable, writes
+`intro_embeddings.parquet`). It currently covers 606 papers.
+
+## Superseded, kept for reference
+
+`coupling.py`, `compare_arms.py` and `export_for_report.py` were the 9 August
+analysis. They read `citation_intensity.db`, which the corpus replaced after an
+audit found seven classes of extraction bug in its LaTeX parsing, so their figures
+predate the correction. Do not re-run them; `abstracts_vs_intros_v2.py` is the
+current version of the same comparison.
 
 `make_triplets.py` and `judge.py` build and serve the human triplet task. That
 elicitation was abandoned as unworkable — see the report — and they are kept
 because the list-comparison design that should replace it reuses most of them.
 
-Large intermediates (`*.npy`, `intro_embeddings.parquet`, `report_pairs.csv`)
-are gitignored and regenerate from the scripts above.
+Large intermediates (`*.npy`, `intro_embeddings.parquet`, `report_pairs.csv`) are
+gitignored and regenerate from the scripts above.

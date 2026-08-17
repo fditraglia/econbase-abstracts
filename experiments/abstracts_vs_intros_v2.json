@@ -1,0 +1,39 @@
+{
+  "pool": 578,
+  "pairs": 166753,
+  "coupled_pairs": 13850,
+  "abstract": {
+    "arm": "abstract",
+    "spearman_all_pairs": 0.27114161872257814,
+    "spearman_coupled_pairs": 0.336011589693263,
+    "mean_cos_coupled": 0.5084228515625,
+    "mean_cos_uncoupled": 0.4178730547428131,
+    "top10_overlap_with_coupling": 2.73731884057971
+  },
+  "intro": {
+    "arm": "introduction",
+    "spearman_all_pairs": 0.2820586474016314,
+    "spearman_coupled_pairs": 0.3524480208349225,
+    "mean_cos_coupled": 0.513613224029541,
+    "mean_cos_uncoupled": 0.41063061356544495,
+    "top10_overlap_with_coupling": 2.846014492753623
+  },
+  "arms": {
+    "same_nearest_paper": 0.47231833910034604,
+    "mean_top10_overlap": 5.927335640138408,
+    "spearman_between_arms": 0.8631754965302909
+  },
+  "paired": {
+    "papers": 552,
+    "mean_difference_intro_minus_abstract": 0.10869565217391304,
+    "std_error": 0.04809279330794316,
+    "ci95": [
+      0.014433777290344452,
+      0.20295752705748163
+    ],
+    "wilcoxon_p": 0.02533607661481463,
+    "intro_better": 178,
+    "abstract_better": 145,
+    "tied": 229
+  }
+}

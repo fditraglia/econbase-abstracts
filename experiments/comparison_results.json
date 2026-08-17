@@ -1,0 +1,110 @@
+{
+  "corpus": {
+    "papers_embedded": 5727,
+    "citation_edges": 14835,
+    "seed": 20260817
+  },
+  "paper_pooled": {
+    "label": "paper level, pooled",
+    "units": 3868,
+    "median_depth": 4.0,
+    "overlap": 0.2244400815603844,
+    "cos_theirs": 0.6344530533579291,
+    "cos_ours": 0.7266093634354045,
+    "cos_year_matched": 0.434784783610945,
+    "cos_uniform": 0.4276468829360657,
+    "w_theirs": 0.554456684812053,
+    "w_ours": 0.16046463314639053,
+    "w_uniform": 0.0004859816306971877
+  },
+  "paper_out": {
+    "label": "paper level, out",
+    "units": 3147,
+    "median_depth": 3.0,
+    "overlap": 0.18620089175379925,
+    "cos_theirs": 0.6351816171042155,
+    "cos_ours": 0.7350838532192502,
+    "cos_year_matched": 0.43982757818786006,
+    "cos_uniform": 0.43050924602163226,
+    "w_theirs": 0.5741038264691497,
+    "w_ours": 0.20351964750790516,
+    "w_uniform": 0.0007603366352516293
+  },
+  "paper_in": {
+    "label": "paper level, in",
+    "units": 2455,
+    "median_depth": 2.0,
+    "overlap": 0.20080092457892865,
+    "cos_theirs": 0.6475319748012208,
+    "cos_ours": 0.746615694982214,
+    "cos_year_matched": 0.4336149185167553,
+    "cos_uniform": 0.43265903130811006,
+    "w_theirs": 0.581745939702578,
+    "w_ours": 0.23872583039526082,
+    "w_uniform": 0.0006359889891810902
+  },
+  "author_max_min1": {
+    "label": "author level, max, >=1 own papers",
+    "units": 3557,
+    "median_depth": 5.0,
+    "overlap": 0.18650143708928726,
+    "cos_theirs": 0.6252802752748043,
+    "cos_ours": 0.7235458978515412,
+    "cos_year_matched": 0.43927513446270294,
+    "cos_uniform": 0.43678859408263043,
+    "w_theirs": 0.5738148614312785,
+    "w_ours": 0.1609590330822087,
+    "w_uniform": 0.001246574543186408
+  },
+  "author_max_min3": {
+    "label": "author level, max, >=3 own papers",
+    "units": 813,
+    "median_depth": 14.0,
+    "overlap": 0.19640143423388032,
+    "cos_theirs": 0.656881901060963,
+    "cos_ours": 0.7536957098989029,
+    "cos_year_matched": 0.48358650071154663,
+    "cos_uniform": 0.48065253590012536,
+    "w_theirs": 0.7567247813366261,
+    "w_ours": 0.2620640352158802,
+    "w_uniform": 0.003948340832960819
+  },
+  "author_mean_min1": {
+    "label": "author level, mean, >=1 own papers",
+    "units": 3557,
+    "median_depth": 5.0,
+    "overlap": 0.1760606014299294,
+    "cos_theirs": 0.5921881337882362,
+    "cos_ours": 0.6798296492522709,
+    "cos_year_matched": 0.42330886435736625,
+    "cos_uniform": 0.42097626590045073,
+    "w_theirs": 0.5738148614312785,
+    "w_ours": 0.15125305392162205,
+    "w_uniform": 0.0014745967118051883
+  },
+  "author_mean_min3": {
+    "label": "author level, mean, >=3 own papers",
+    "units": 813,
+    "median_depth": 14.0,
+    "overlap": 0.15888377104147156,
+    "cos_theirs": 0.5506144067018235,
+    "cos_ours": 0.616082973512483,
+    "cos_year_matched": 0.4281908325750156,
+    "cos_uniform": 0.42365276756688386,
+    "w_theirs": 0.7567247813366261,
+    "w_ours": 0.22464271626100762,
+    "w_uniform": 0.004418252206600674
+  },
+  "pairs": {
+    "linked_pairs": 14824,
+    "unlinked_sampled": 199881,
+    "year_matched_sampled": 14824,
+    "spearman_cos_vs_weight_on_linked": 0.2580691425406678,
+    "spearman_p": 3.7832865327798463e-224,
+    "mean_cos_linked": 0.6374877142356543,
+    "mean_cos_unlinked": 0.41248226165771484,
+    "mean_cos_year_matched": 0.41652578115463257,
+    "auc_cos_predicts_link": 0.9573270995054793,
+    "auc_cos_predicts_link_year_matched": 0.9535434600299568
+  }
+}

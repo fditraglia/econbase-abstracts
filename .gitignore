@@ -23,3 +23,12 @@ experiments/report_pairs.csv
 experiments/*.log
 experiments/embedding-experiment.html
 experiments/embedding-experiment_files/
+
+# incremental refresh scratch (regenerates; see refresh_embeddings.py)
+.refresh_cache.parquet
+*.parquet.tmp
+
+# Describes the local embeddings file, so it must travel with the data rather than
+# the code: a manifest committed ahead of its parquet would tell a fresh clone that
+# papers it does not have were already fetched.
+embeddings_manifest.json
