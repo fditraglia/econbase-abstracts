@@ -28,12 +28,17 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 import urllib.request
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import polars as pl
 from pylatexenc.latex2text import LatexNodes2Text
+
+import build_similarity_table
 
 # --- Configuration -----------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -211,6 +216,64 @@ def embed(texts: list[str]) -> list[list[float]]:
     return vectors
 
 
+# --- Publishing --------------------------------------------------------------
+# The vectors are not in git: the app reads the small similarity table instead, and
+# versioning a 184 MB file on every refresh would exhaust the Git LFS allowance in
+# about four runs. The bucket keeps one current copy, with a pointer file beside it
+# so a consumer can tell what it has without downloading the whole thing.
+BUCKET = "gs://econbase-embeddings"
+
+
+def gcloud_path() -> str | None:
+    found = shutil.which("gcloud")
+    if found:
+        return found
+    standalone = Path.home() / "google-cloud-sdk" / "bin" / "gcloud"
+    return str(standalone) if standalone.exists() else None
+
+
+def sha256_of(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def publish() -> None:
+    """Upload the vectors and a pointer describing them.
+
+    Exits non-zero if this fails. The local files are already written, so re-running
+    is cheap, and a refresh that quietly stopped short of publishing would leave the
+    bucket describing a corpus nobody else can see.
+    """
+    gcloud = gcloud_path()
+    if gcloud is None:
+        raise SystemExit("gcloud not found; install it or pass --no-publish")
+
+    manifest = json.load(open(MANIFEST_FILE))
+    manifest.update({
+        "object": os.path.basename(EMBEDDINGS_FILE),
+        "sha256": sha256_of(EMBEDDINGS_FILE),
+        "bytes": os.path.getsize(EMBEDDINGS_FILE),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    })
+    pointer = os.path.join(BASE_DIR, ".current.json")
+    with open(pointer, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"\npublishing to {BUCKET} ...", flush=True)
+    for src, dest in ((EMBEDDINGS_FILE, f"{BUCKET}/{os.path.basename(EMBEDDINGS_FILE)}"),
+                      (pointer, f"{BUCKET}/current.json")):
+        r = subprocess.run([gcloud, "storage", "cp", src, dest],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"upload of {os.path.basename(src)} failed:\n{r.stderr}")
+    os.remove(pointer)
+    print(f"published {manifest['n_papers']} papers, "
+          f"sha256 {manifest['sha256'][:16]}", flush=True)
+
+
 # --- Atomic write ------------------------------------------------------------
 def write_atomic(df: pl.DataFrame, path: str) -> None:
     """Write beside the target, then rename. A crash leaves the old file intact."""
@@ -250,6 +313,10 @@ def main() -> None:
                     help="report what would change and exit")
     ap.add_argument("--limit", type=int, default=None,
                     help="stop after this many arXiv results (for testing)")
+    ap.add_argument("--no-table", action="store_true",
+                    help="skip rebuilding similarity_top100.parquet")
+    ap.add_argument("--no-publish", action="store_true",
+                    help="skip uploading the vectors to the bucket")
     ap.add_argument("--allow-model-change", action="store_true",
                     help="proceed even if the model digest differs from the manifest")
     args = ap.parse_args()
@@ -384,7 +451,9 @@ def main() -> None:
         "max_updated_seen": watermark_out,
         "model": MODEL_NAME,
         "model_digest": digest,
-        "embedding_dim": len(vectors[0]),
+        # Read off the data rather than the batch just embedded, which is empty when
+        # everything came from the cache.
+        "embedding_dim": len(combined["embedding"][0]),
         "last_run_new": len(new_ids),
         "last_run_revised": len(revised_ids),
     }
@@ -393,6 +462,16 @@ def main() -> None:
 
     print(f"\nwrote {combined.height} papers to {os.path.basename(EMBEDDINGS_FILE)}")
     print(f"newest publication date: {manifest['max_published']}")
+
+    # New vectors mean the served table is out of date. Rebuilding here rather than
+    # leaving it to be remembered: a refresh without it leaves the app recommending
+    # from the old corpus with nothing to show that it is doing so.
+    if not args.no_table:
+        print("\nrebuilding the similarity table...", flush=True)
+        build_similarity_table.main()
+
+    if not args.no_publish:
+        publish()
 
 
 if __name__ == "__main__":

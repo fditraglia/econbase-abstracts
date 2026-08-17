@@ -10,12 +10,14 @@ Embed and cluster econometrics paper abstracts from arXiv (category econ.EM) usi
 
 ```bash
 uv run refresh_embeddings.py --dry-run   # what has changed on arXiv since the last run
-uv run refresh_embeddings.py             # fetch + embed only what is new or revised
-uv run build_similarity_table.py         # embeddings → similarity_top100.parquet (the app reads this)
+uv run refresh_embeddings.py             # embed what is new, rebuild the table, publish
+git add -A && git commit && git push hf master:main   # deploy the result
 uv run python app.py                     # Flask app at http://localhost:5000
 ```
 
-`refresh_embeddings.py` is the normal way to update and is safe to re-run at any time; `fetch_abstracts.py` and `embed_abstracts.py` remain for a cold build from nothing.
+One refresh does three things: embeds papers that are new or revised, rebuilds `similarity_top100.parquet`, and uploads the vectors to the bucket. `--no-table` and `--no-publish` skip the last two. Skipping the rebuild by hand is the trap it exists to avoid — the app would serve recommendations from the old corpus with nothing to show it.
+
+It is safe to re-run at any time; a run with nothing new costs one arXiv query. `fetch_abstracts.py` and `embed_abstracts.py` remain for a cold build from nothing.
 
 Embedding needs Ollama running with the frozen model: `ollama cp qwen3-embedding:latest qwen3-embedding-econbase:v1`. The frozen copy matters because `latest` is a moving tag — if it repoints, new vectors land in a different space from the old ones, cosine similarities across the boundary become meaningless, and nothing visibly breaks. The refresh checks the model digest against `embeddings_manifest.json` and refuses to run if it has moved.
 
