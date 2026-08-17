@@ -297,6 +297,10 @@ def main():
     for direction, rows in by_direction.items():
         results[f"paper_{direction}"] = summarize(rows, f"paper level, {direction}")
         print("  " + json.dumps(results[f"paper_{direction}"]))
+    # Tidy rows for the report: one line per paper, so the write-up can show the
+    # distribution rather than only its mean.
+    pl.DataFrame([dict(r, direction=d) for d, rows in by_direction.items() for r in rows]) \
+      .write_csv(HERE / "comparison_paper_level.csv")
 
     # ---- Part 1b: author level ----------------------------------------------
     authors = sorted({k for k, _ in stored_author})
@@ -330,6 +334,9 @@ def main():
         key = f"author_{rule}_min{m}"
         results[key] = summarize(rows, f"author level, {rule}, >={m} own papers")
         print("  " + json.dumps(results[key]))
+    pl.DataFrame([dict(r, rule=rule, min_own=m)
+                  for (rule, m), rows in by_rule.items() for r in rows]) \
+      .write_csv(HERE / "comparison_author_level.csv")
 
     # ---- Part 1c: pair-level statistics -------------------------------------
     linked = [(a, b) for (a, b) in edges if a in idx_of and b in idx_of]
@@ -387,6 +394,14 @@ def main():
         "auc_cos_predicts_link_year_matched": auc_of(cos_linked, cos_matched),
     }
     print("\npairs: " + json.dumps(results["pairs"], indent=2))
+
+    step = max(1, len(cos_linked) // 6000)
+    pl.DataFrame({"cosine": np.concatenate([cos_linked[::step], cos_unlinked[::step * 13],
+                                            cos_matched[::step]]),
+                  "group": (["citation-linked"] * len(cos_linked[::step])
+                            + ["unlinked"] * len(cos_unlinked[::step * 13])
+                            + ["unlinked, year-matched"] * len(cos_matched[::step]))}) \
+      .write_csv(HERE / "comparison_pairs.csv")
 
     OUT_JSON.write_text(json.dumps(results, indent=2))
     print(f"\nwrote {OUT_JSON}")

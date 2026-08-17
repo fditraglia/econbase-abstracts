@@ -37,3 +37,9 @@ embeddings_manifest.json
 # these are needed only for analysis and for rebuilding that table. Canonical copy:
 #   gs://econbase-embeddings/econ_em_embeddings.parquet  (pointer: current.json)
 econ_em_embeddings.parquet
+
+# Per-unit rows behind the citation-vs-embedding report. Regenerate with
+# experiments/compare_citation_embedding.py; the rendered HTML is self-contained.
+experiments/comparison_paper_level.csv
+experiments/comparison_author_level.csv
+experiments/comparison_pairs.csv
