@@ -15,6 +15,7 @@ place — but using Flask (Python's lightweight web framework) instead.
 import bisect
 from collections import defaultdict
 import os
+import re
 from flask import Flask, jsonify, render_template_string, request, redirect, url_for
 import numpy as np
 import pandas as pd
@@ -29,31 +30,39 @@ app = Flask(__name__)
 # ---------------------------------------------------------------------------
 # Load data on startup
 # ---------------------------------------------------------------------------
-# Read the parquet file with pandas (pyarrow backend handles the nested
-# embedding lists). We convert embeddings to a pre-normalised float32
-# numpy matrix so cosine similarity is just a dot product.
+# The app only ever ranks papers against a paper already in the corpus, so it
+# needs each paper's closest neighbors and not the 4096-dimensional vectors they
+# were computed from. Those live in gs://econbase-embeddings and are used for
+# analysis; build_similarity_table.py turns them into the small table read here.
+# Storing the top 100 makes this exact rather than approximate: the interface can
+# ask for at most max(50 * 2, 50) = 100 neighbors.
 #
 # R analogy: like loading an .rds file in global.R for a Shiny app — it
 # runs once when the app starts, not on every request.
 
-print("Loading embeddings...", flush=True)
-df = pd.read_parquet(os.path.join(BASE_DIR, "econ_em_embeddings.parquet"))
+print("Loading papers...", flush=True)
+df = pd.read_parquet(os.path.join(BASE_DIR, "econ_em_papers.parquet"))
 
-# Build the embedding matrix: each row is a paper's 4096-dim vector
-embeddings = np.array(df["embedding"].tolist(), dtype=np.float32)
-
-# L2-normalise so dot product == cosine similarity
-# R analogy: like sweep(mat, 1, sqrt(rowSums(mat^2)), "/")
-norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-norms[norms == 0] = 1  # guard against zero vectors
-embeddings = embeddings / norms
-
-# Lookup dict: arxiv_id string → row index in the matrix
+# Lookup dict: arxiv_id string → row index
 id_to_idx = {aid: i for i, aid in enumerate(df["arxiv_id"])}
 
+# A revision changes a paper's identifier (2405.06779v3 becomes v4), so a bookmarked
+# link would break on every refresh. Accept the version-stripped form as well.
+base_to_idx = {}
+for aid, i in id_to_idx.items():
+    base_to_idx.setdefault(re.sub(r"v\d+$", "", aid), i)
+
 N_PAPERS = len(df)
-print(f"Loaded {N_PAPERS} papers, embedding matrix shape: {embeddings.shape}",
-      flush=True)
+
+print("Loading the similarity table...", flush=True)
+_sim = pd.read_parquet(os.path.join(BASE_DIR, "similarity_top100.parquet"))
+_sim_order = {aid: i for i, aid in enumerate(_sim["arxiv_id"])}
+NEIGHBOR_IDX = np.array(
+    [[id_to_idx[n] for n in row] for row in _sim["neighbor_ids"]], dtype=np.int32)
+NEIGHBOR_SIM = np.array(_sim["cosines"].tolist(), dtype=np.float32)
+TABLE_DEPTH = NEIGHBOR_IDX.shape[1]
+del _sim
+print(f"Loaded {N_PAPERS} papers, top-{TABLE_DEPTH} neighbors each", flush=True)
 
 # Pre-sorted IDs for O(log n) prefix matching in autocomplete
 sorted_ids = sorted(df["arxiv_id"].tolist())
@@ -74,23 +83,33 @@ print(f"Built co-author graph: {len(coauthor_graph)} authors", flush=True)
 # Recommendation logic
 # ---------------------------------------------------------------------------
 
+def resolve(query):
+    """Map a user-supplied identifier to the one we hold, or None.
+
+    Accepts '2405.06779v4', '2405.06779', or a stale version such as
+    '2405.06779v3', all of which name the same paper.
+    """
+    q = (query or "").strip()
+    if q in id_to_idx:
+        return q
+    i = base_to_idx.get(re.sub(r"v\d+$", "", q))
+    return None if i is None else df["arxiv_id"].iloc[i]
+
+
 def find_similar(arxiv_id, top_k=50):
-    """Return indices and cosine similarities of the top-k most similar papers."""
-    idx = id_to_idx[arxiv_id]
-    query_vec = embeddings[idx]  # already normalised
+    """Return indices and cosine similarities of the top-k most similar papers.
 
-    # Single matrix-vector dot product → all cosine similarities (< 1 ms)
-    sims = embeddings @ query_vec
-    # Zero out the query paper itself
-    sims[idx] = -1
-
-    # argpartition is O(n) vs O(n log n) for full sort — faster for large n
-    # R analogy: no direct equivalent; sort(x, partial=k) is similar
-    top_indices = np.argpartition(sims, -top_k)[-top_k:]
-    top_indices = top_indices[np.argsort(sims[top_indices])[::-1]]
-    top_sims = sims[top_indices]
-
-    return top_indices, top_sims
+    A lookup rather than a computation. The table is already sorted by descending
+    similarity and excludes the paper itself, so this is a slice.
+    """
+    row = _sim_order[arxiv_id]
+    if top_k > TABLE_DEPTH:
+        # Silently returning a short list would look like a corpus with few close
+        # papers rather than a table that needs rebuilding deeper.
+        print(f"WARNING: asked for {top_k} neighbors but the table holds "
+              f"{TABLE_DEPTH}; rebuild with a larger TOP_K", flush=True)
+        top_k = TABLE_DEPTH
+    return NEIGHBOR_IDX[row, :top_k], NEIGHBOR_SIM[row, :top_k]
 
 
 def aggregate_referees(arxiv_id, agg_rule="mean-top-3", top_k_papers=50,
@@ -172,9 +191,10 @@ def home():
     if request.method == "POST":
         query = request.form.get("arxiv_id", "").strip()
         if query:
-            # If exact ID match, go straight to recommendations
-            if query in id_to_idx:
-                return redirect(url_for("recommend", arxiv_id=query))
+            # If it names a paper we hold, go straight to recommendations
+            canonical = resolve(query)
+            if canonical:
+                return redirect(url_for("recommend", arxiv_id=canonical))
             # Otherwise, search
             return redirect(url_for("search", q=query))
     return render_template_string(HOME_TEMPLATE, n_papers=N_PAPERS)
@@ -182,10 +202,15 @@ def home():
 
 @app.route("/recommend/<path:arxiv_id>")
 def recommend(arxiv_id):
-    arxiv_id = arxiv_id.strip()
-    if arxiv_id not in id_to_idx:
-        return render_template_string(ERROR_TEMPLATE, arxiv_id=arxiv_id,
+    canonical = resolve(arxiv_id)
+    if canonical is None:
+        return render_template_string(ERROR_TEMPLATE, arxiv_id=arxiv_id.strip(),
                                       n_papers=N_PAPERS)
+    if canonical != arxiv_id.strip():
+        # A link made before the paper was revised. Send it to the current version
+        # rather than failing, and keep any options the user had set.
+        return redirect(url_for("recommend", arxiv_id=canonical, **request.args))
+    arxiv_id = canonical
 
     # Read controls from query params (defaults: mean-top-3, 10 results)
     agg_rule = request.args.get("agg", "mean-top-3")

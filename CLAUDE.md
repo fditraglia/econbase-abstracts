@@ -9,12 +9,15 @@ Embed and cluster econometrics paper abstracts from arXiv (category econ.EM) usi
 ## Commands
 
 ```bash
-uv run fetch_abstracts.py    # Pull all econ.EM papers from arXiv → econ_em_papers.parquet
-uv run embed_abstracts.py    # Embed papers via Ollama → econ_em_embeddings.parquet (~30 min)
-uv run python app.py         # Run Flask app locally at http://localhost:5000
+uv run refresh_embeddings.py --dry-run   # what has changed on arXiv since the last run
+uv run refresh_embeddings.py             # fetch + embed only what is new or revised
+uv run build_similarity_table.py         # embeddings → similarity_top100.parquet (the app reads this)
+uv run python app.py                     # Flask app at http://localhost:5000
 ```
 
-Embedding requires Ollama running locally: `ollama pull qwen3-embedding`
+`refresh_embeddings.py` is the normal way to update and is safe to re-run at any time; `fetch_abstracts.py` and `embed_abstracts.py` remain for a cold build from nothing.
+
+Embedding needs Ollama running with the frozen model: `ollama cp qwen3-embedding:latest qwen3-embedding-econbase:v1`. The frozen copy matters because `latest` is a moving tag — if it repoints, new vectors land in a different space from the old ones, cosine similarities across the boundary become meaningless, and nothing visibly breaks. The refresh checks the model digest against `embeddings_manifest.json` and refuses to run if it has moved.
 
 ## Deployment (Hugging Face Spaces)
 
@@ -26,13 +29,21 @@ git push hf master:main    # HF Spaces (SSH remote)
 
 The `hf` remote points to `git@hf.co:spaces/fditraglia/referee-recommender`. The Dockerfile runs gunicorn on port 7860 (HF requirement). Parquet files are tracked via Git LFS.
 
-The Space mirrors whatever tree is pushed, so removing a file from the repository removes it from the Space at the next deploy — no separate deletion step. It also means the Space can lag: it serves the last tree pushed to it, not the last commit made here. Check with `git ls-remote hf` when it matters. As of 15 August 2026 the Space is four commits behind and still serving `.claude/settings.local.json`, untracked here in `c47a18b`; the next deploy clears it.
+The Space mirrors whatever tree is pushed, so removing a file from the repository removes it from the Space at the next deploy — no separate deletion step. It also means the Space can lag: it serves the last tree pushed to it, not the last commit made here. Check with `git ls-remote hf` when it matters.
 
 ## Pipeline and data flow
 
-1. **fetch_abstracts.py** → `econ_em_papers.parquet`: Fetches all econ.EM papers (primary + cross-listed), cleans LaTeX to Unicode, stores both raw and cleaned text
-2. **embed_abstracts.py** → `econ_em_embeddings.parquet`: Reads papers parquet, embeds title+abstract via Ollama's HTTP API, appends 4096-dim embedding column
-3. **app.py**: Flask web app — loads embeddings parquet, serves referee recommendations via cosine similarity + author aggregation
+1. **refresh_embeddings.py** → `econ_em_papers.parquet` + `econ_em_embeddings.parquet`: asks arXiv what has changed since the last run, sorted by *last updated* rather than submission date so revisions are visible, cleans LaTeX to Unicode, and embeds only papers that are new or whose abstract text actually moved. Keys on the version-stripped id, writes through a temporary file, and records what it did in `embeddings_manifest.json`.
+2. **build_similarity_table.py** → `similarity_top100.parquet`: each paper's 100 nearest neighbors with their cosine similarities, about 4 MB.
+3. **app.py**: Flask web app — loads the papers parquet and the similarity table, serves referee recommendations via author aggregation.
+
+**The app never reads the 4096-dimensional vectors.** It only ranks papers against a paper already in the corpus, so it needs the answers rather than the raw material. The interface can ask for at most 100 neighbors, so a top-100 table reproduces its output exactly rather than approximately — verified over 300 papers, identical referee lists and ordering, differences only at the 1e-6 level from float32 summation order.
+
+`econ_em_embeddings.parquet` is therefore gitignored. It is needed for analysis and for rebuilding the table, and its canonical copy is `gs://econbase-embeddings/econ_em_embeddings.parquet`, with `current.json` beside it recording the paper count, date, model digest and SHA-256. Fetch it with:
+
+```bash
+gcloud storage cp gs://econbase-embeddings/econ_em_embeddings.parquet .
+```
 
 ## Key design decisions
 
@@ -41,9 +52,15 @@ The Space mirrors whatever tree is pushed, so removing a file from the repositor
 - **Raw + cleaned text**: Both `title_raw`/`abstract_raw` and `title`/`abstract` (LaTeX→Unicode) are stored so cleaning errors can be audited.
 - **Primary vs cross-listed**: `is_primary_econ_em` boolean and `primary_category` column let you filter either way.
 
-## Parquet schema (econ_em_embeddings.parquet)
+## Parquet schemas
 
-`arxiv_id`, `authors`, `title_raw`, `abstract_raw`, `title`, `abstract`, `primary_category`, `categories`, `is_primary_econ_em`, `published`, `url`, `embedding` (list of 4096 floats)
+`econ_em_papers.parquet` (deployed, ~4 MB): `arxiv_id`, `base_id`, `version`, `authors`, `title_raw`, `abstract_raw`, `title`, `abstract`, `primary_category`, `categories`, `is_primary_econ_em`, `published`, `url`, `text_sha`
+
+`econ_em_embeddings.parquet` (bucket only): the same columns plus `embedding`, a list of 4096 floats.
+
+`similarity_top100.parquet` (deployed, ~4 MB): `arxiv_id`, `neighbor_ids` (list of 100 strings), `cosines` (list of 100 float32), ordered by descending similarity and excluding the paper itself.
+
+`base_id` is the identifier with the version suffix stripped. A revision changes `arxiv_id` from `v3` to `v4`, so anything joining across refreshes must key on `base_id`; the app accepts either form and redirects to the current one.
 
 ## Corpus data (the `econ-corpus` bucket)
 

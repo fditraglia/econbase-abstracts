@@ -32,3 +32,8 @@ experiments/embedding-experiment_files/
 # the code: a manifest committed ahead of its parquet would tell a fresh clone that
 # papers it does not have were already fetched.
 embeddings_manifest.json
+
+# The 4096-dimensional vectors. The app reads similarity_top100.parquet instead, so
+# these are needed only for analysis and for rebuilding that table. Canonical copy:
+#   gs://econbase-embeddings/econ_em_embeddings.parquet  (pointer: current.json)
+econ_em_embeddings.parquet
