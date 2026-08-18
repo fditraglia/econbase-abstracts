@@ -11,8 +11,11 @@ figures with plots and tables are in `embedding-experiment.qmd`.
 **How much does embedding similarity differ from the citation measure?** They share
 about a fifth of what they name, at the paper level and the author level alike,
 while each ranks the other's picks far above chance. Run
-`compare_citation_embedding.py`. Written up in
-`econbase-sqare-docs/notes/2026-08-17-embedding-vs-citation.md`.
+`compare_citation_embedding.py`; it writes the JSON and CSVs the write-up reads.
+
+The write-up itself is in the private coordination repo, at
+`econbase-sqare-docs/reference/citation-vs-embedding.qmd`, because it discusses
+another team's pipeline. It renders against the data produced here.
 
 ## Reproducing
 
@@ -26,8 +29,9 @@ done
 ```
 
 ```bash
-uv run compare_citation_embedding.py   # -> comparison_results.json
+uv run compare_citation_embedding.py   # -> comparison_results.json + three CSVs
 uv run abstracts_vs_intros_v2.py       # -> abstracts_vs_intros_v2.json
+quarto render ~/econbase-sqare-docs/reference/citation-vs-embedding.qmd
 ```
 
 Both read only local files, take a few minutes, and reproduce exactly.
