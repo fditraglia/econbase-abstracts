@@ -86,13 +86,13 @@ done
 
 Method and schema for the citation data are documented in the `econ-corpus` repository, which also owns any question about how a measure is defined. Read that before trusting a number from `citations.db`.
 
-## This repository is public
+## Scope of this repository
 
-The GitHub repository is public, and the whole working tree is also pushed to a public Hugging Face Space, `CLAUDE.md` included. Everything written here is published at the moment it is written, not at the moment someone decides to push it.
+This repository is public, and the whole working tree is also pushed to a public Hugging Face Space, `CLAUDE.md` included.
 
-**Keep this repository to its own code and data.** Anything about the wider project belongs in the private coordination repo `fditraglia/econbase-sqare-docs`: write-ups and reports, assessments of other people's code, another repository's internal history or defects, meeting decisions, and anything naming a collaborator. Notes here should be operational — which data to use, which is superseded, what needs re-running, how to run it.
+Keep it to its own code and data: how the pipeline runs, which files it reads, which are superseded, what needs re-running. Everything about the wider project — write-ups and reports, decisions, anything concerning collaborators or other repositories — belongs in the private coordination repo `fditraglia/econbase-sqare-docs`, which is where the rest of the team looks for it anyway.
 
-The line is easy to cross while writing something innocuous. It happened on 18 August: a comparison report was committed here and pushed publicly, and its limitations section diagnosed the corpus pipeline's handling of revisions and cited an audit of its reference extraction. Both statements were accurate and neither belonged on a public repository. The report was moved to `econbase-sqare-docs/reference/`, where it renders against the data that stays here; the commits that carried it remain in this repository's history. Before committing prose here, check whether it is about *this* code or about the project around it.
+That split is worth applying at the moment of writing rather than at the moment of pushing, and it is easy to drift across while drafting something that reads as ordinary technical prose. A write-up whose subject is this code belongs here; one whose subject is the project belongs there.
 
 ## Joplin notes (MCP)
 

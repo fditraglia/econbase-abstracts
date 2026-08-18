@@ -43,10 +43,9 @@ Introduction embeddings come from `embed_intros.py` (~35 min, resumable, writes
 ## Superseded, kept for reference
 
 `coupling.py`, `compare_arms.py` and `export_for_report.py` were the 9 August
-analysis. They read `citation_intensity.db`, which the corpus replaced after an
-audit found seven classes of extraction bug in its LaTeX parsing, so their figures
-predate the correction. Do not re-run them; `abstracts_vs_intros_v2.py` is the
-current version of the same comparison.
+analysis. They read `citation_intensity.db`, which the corpus has since replaced,
+so their figures predate the replacement. Do not re-run them;
+`abstracts_vs_intros_v2.py` is the current version of the same comparison.
 
 `make_triplets.py` and `judge.py` build and serve the human triplet task. That
 elicitation was abandoned as unworkable — see the report — and they are kept

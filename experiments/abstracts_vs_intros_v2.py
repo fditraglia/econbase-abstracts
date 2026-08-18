@@ -4,10 +4,10 @@
 """Abstracts versus introductions, judged against corrected reference data.
 
 Re-runs the 9 August experiment. That version built its bibliographic coupling measure
-from citation_intensity.db, which econ-corpus has since replaced after an audit found
-seven classes of extraction bug in it. Everything here is rebuilt from citations.db's
-references_ table instead; nothing else about the design changes, so the numbers are
-directly comparable to the ones recorded in notes/2026-08-09-embedding-experiment.md.
+from citation_intensity.db, which the corpus has since replaced with a rebuilt reference
+extraction. Everything here is rebuilt from citations.db's references_ table instead;
+nothing else about the design changes, so the earlier numbers and these are directly
+comparable.
 
 Coupling rather than direct citation links, for the same reason as last time: only 203
 citation links fall inside the 606-paper pool, far too few to rank anything, whereas
