@@ -293,7 +293,7 @@ def main():
             r = compare_lists(target, sims, idx_of, ids, years, i, set(), rng,
                               lambda q, p=p: sym.get((p, q), 0.0))
             if r:
-                by_direction[direction].append(r)
+                by_direction[direction].append(dict(r, arxiv_id=p))
     for direction, rows in by_direction.items():
         results[f"paper_{direction}"] = summarize(rows, f"paper level, {direction}")
         print("  " + json.dumps(results[f"paper_{direction}"]))
@@ -328,7 +328,7 @@ def main():
                 continue
             for m in (1, 3):
                 if len(mine_papers) >= m:
-                    by_rule[(rule, m)].append(r)
+                    by_rule[(rule, m)].append(dict(r, author_id=a, n_own=len(mine_papers)))
 
     for (rule, m), rows in by_rule.items():
         key = f"author_{rule}_min{m}"

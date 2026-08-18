@@ -1,6 +1,6 @@
 ---
 title: "Two ways of finding related work"
-subtitle: "Abstract-embedding similarity against the citation measure EconBase serves"
+subtitle: "Text similarity against citation similarity, on 5,732 econometrics papers"
 author: "Francis DiTraglia"
 date: 2026-08-18
 format:
@@ -25,122 +25,128 @@ library(readr)
 library(tidyr)
 library(knitr)
 
-EMBED <- "#2a78d6"   # same slots as the 9 August report, so the two read as a pair
+EMBED <- "#2a78d6"
 CITE  <- "#eb6834"
 BASE  <- "grey60"
 
 theme_report <- function() {
   theme_minimal(base_size = 11) +
-    theme(
-      panel.grid.minor = element_blank(),
-      panel.grid.major = element_line(color = "grey92", linewidth = 0.3),
-      axis.title = element_text(color = "grey30"),
-      axis.text = element_text(color = "grey40"),
-      plot.title = element_text(face = "bold", size = 12),
-      plot.subtitle = element_text(color = "grey35", size = 10),
-      legend.position = "top",
-      legend.title = element_blank()
-    )
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "grey92", linewidth = 0.3),
+          axis.title = element_text(color = "grey30"),
+          axis.text = element_text(color = "grey40"),
+          plot.title = element_text(face = "bold", size = 12),
+          plot.subtitle = element_text(color = "grey35", size = 10),
+          legend.position = "top", legend.title = element_blank())
 }
 
-paper  <- read_csv("comparison_paper_level.csv", show_col_types = FALSE)
-author <- read_csv("comparison_author_level.csv", show_col_types = FALSE)
+paper  <- read_csv("comparison_paper_level.csv", col_types = cols(arxiv_id = col_character()))
+author <- read_csv("comparison_author_level.csv", col_types = cols(author_id = col_character()))
 pairs  <- read_csv("comparison_pairs.csv", show_col_types = FALSE)
 res    <- jsonlite::fromJSON("comparison_results.json")
 arms   <- jsonlite::fromJSON("abstracts_vs_intros_v2.json")
-
+pooled <- filter(paper, direction == "pooled")
 pct <- function(x) sprintf("%.1f%%", 100 * x)
 ```
 
-## The question
+## In short
 
-EconBase has two ways of telling you which papers are related to a given one, built from entirely different evidence.
+EconBase is a research database for econometrics: a public website with a page for every paper and every author in a corpus of arXiv preprints, showing among other things which other work is most closely related. It can answer "what else should I read" in two ways — from what papers **say**, and from what they **cite**. This report measures how far apart the two answers are.
 
-The **semantic** measure is the one in `econbase-abstracts`: each paper's title and abstract is embedded with Qwen3-Embedding-8B, and papers are ranked by cosine similarity. It is symmetric and defined for every pair of papers in the corpus.
+**They agree about which papers are relevant and disagree about which are most relevant.** Text similarity distinguishes citation-linked pairs of papers from unlinked ones very sharply: pick a linked pair and an unlinked pair at random, and the linked one is the more textually similar 96% of the time. Yet among papers that are all plainly relevant, the two rankings share only about a fifth of a ten-item list.
 
-The **citation** measure is the one `citations.db` serves on the live site. Every reference that resolves to another corpus paper becomes a directed edge, weighted by `composite_index` — a score between 0 and 1 combining how often a reference is mentioned, across how many sections, and what share of those mentions sit in the main text rather than an appendix. A paper page shows the top ten each way; an author page aggregates over that author's papers.
+That gap is the practical result, because a short ranked list is what a reader is shown. Everything on such a list already clears the relevance bar, so agreement about relevance changes nothing a user sees, while disagreement about ordering changes all of it.
 
-The direction agreed on 11 August was to keep both and find a good way to combine them. Nobody had yet measured how far apart they actually are. This report does that, on `r format(res$corpus$papers_embedded, big.mark = ",")` papers.
+It follows that combining the two measures is not a way to surface more relevant work — each already does that — but a choice about what "related" should mean: papers that share a method, or papers that share a literature. Nothing here can settle which is correct, so the sensible product decision is to offer both.
 
-## How the comparison is set up
+A separate question, asked earlier in this series, was whether embedding more of each paper works better. Introductions now beat abstracts by a statistically detectable margin that is far too small to be worth seven times the computation. Abstracts stay.
 
-Three choices matter, and each was forced by something in the data.
+## What is being compared
 
-**Their lists are read, not rebuilt.** The comparison uses the tables the site serves, so it measures what a user would actually see rather than our reconstruction of it.
+The corpus is every paper on arXiv in category econ.EM — econometrics — including papers cross-listed there from statistics, machine learning and finance. As of 14 August 2026 that is 5,732 papers going back to 2005.
 
-**Depth is matched per unit.** Citations between two papers we both hold are rare — `r format(res$corpus$citation_edges, big.mark = ",")` directed pairs among `r format(res$corpus$papers_embedded, big.mark = ",")` papers — so the median served list holds four entries, not ten. Comparing a full top-ten against a list of four would understate agreement, so for each unit we take as many of our own neighbors as their list holds.
+**Text similarity** embeds each paper's title and abstract with Qwen3-Embedding-8B, a 4096-dimensional embedding model, run locally. Papers are ranked by the cosine similarity of those vectors. It is symmetric and defined for all 16 million pairs.
 
-**Baselines are matched on publication year.** A paper can only cite earlier work, so its citation neighbors are systematically older, by a median of about three years. A uniform random baseline would flatter the citation measure on anything age-correlated.
+**Citation similarity** is the measure the live site serves. Every reference in a paper's bibliography that can be resolved to another paper *in the corpus* becomes a directed link, weighted by how heavily the citing paper leans on it: the weight combines the number of in-text mentions, the number of distinct sections mentioning it, and the share of mentions falling in the main text rather than an appendix, as a number between 0 and 1. A paper page shows the ten strongest links in each direction; an author page pools the links from all of that author's papers, which is how the site answers "whose work is closest to this person's".
+
+The essential asymmetry is that citation similarity is defined only where a link exists. There are 14,835 directed links among 5,732 papers, so the overwhelming majority of pairs have no citation relationship at all, and the median served list holds four papers rather than ten.
+
+## How agreement is measured
+
+**Overlap.** For each paper, take the list the site serves, of length *N*. Take the *N* most textually similar papers, excluding the paper itself. Overlap is the size of the intersection divided by *N*. Matching the depth to *N* matters: comparing a full top ten against a served list of four would count six guaranteed misses.
+
+**Baselines.** A paper can only cite earlier work, so its citation links skew about three years older. Every random baseline therefore draws papers matched on publication year, so that nothing is credited to age alone.
+
+**Samples.** 3,868 papers have at least one served citation link and an embedding; the other 1,864 have no citation link and cannot be compared. At the author level, 3,557 of the site's authors have a served list and at least one embedded paper of their own.
 
 ## They name largely different work
 
 ```{r overlap-table}
-paper %>%
-  filter(direction == "pooled") %>%
-  summarise(Unit = "Paper", Units = n(), `Median depth` = median(n),
-            Overlap = pct(mean(overlap))) %>%
-  bind_rows(
-    author %>% filter(rule == "max", min_own == 1) %>%
-      summarise(Unit = "Author", Units = n(), `Median depth` = median(n),
-                Overlap = pct(mean(overlap))),
-    author %>% filter(rule == "max", min_own == 3) %>%
-      summarise(Unit = "Author, 3+ papers", Units = n(), `Median depth` = median(n),
-                Overlap = pct(mean(overlap)))) %>%
+bind_rows(
+  pooled %>% summarise(Unit = "Paper", Units = n(), `Median depth` = median(n),
+                       Overlap = pct(mean(overlap))),
+  author %>% filter(rule == "max", min_own == 1) %>%
+    summarise(Unit = "Author", Units = n(), `Median depth` = median(n),
+              Overlap = pct(mean(overlap))),
+  author %>% filter(rule == "max", min_own == 3) %>%
+    summarise(Unit = "Author, 3+ papers", Units = n(), `Median depth` = median(n),
+              Overlap = pct(mean(overlap)))) %>%
   kable(align = "lrrr")
 ```
 
-Roughly a fifth of each list appears in the other. Four fifths of what either measure recommends, the other does not.
+Roughly a fifth of each served list is also named by text similarity.
 
-The average hides a wide spread, and the spread is the more useful fact: the two measures agree completely on some papers and not at all on many others.
+The average is not concealing a split between papers where the measures agree completely and papers where they agree not at all. It looks that way in a raw histogram, but that is arithmetic: when a served list holds one paper, overlap can only be 0 or 1. Conditioning on list length removes the illusion and shows a mean that is flat, if anything rising slightly with length.
 
-```{r fig-overlap}
-#| fig-cap: "Agreement varies far more across papers than the average suggests. Each bar counts papers by the share of their citation-based list that also appears in their embedding-based list, at matched depth."
-paper %>%
-  filter(direction == "pooled") %>%
-  ggplot(aes(overlap)) +
-  geom_histogram(binwidth = 0.1, boundary = 0, fill = EMBED, alpha = 0.85) +
-  geom_vline(aes(xintercept = mean(overlap)), color = CITE, linewidth = 0.7) +
-  annotate("text", x = mean(filter(paper, direction == "pooled")$overlap) + 0.02,
-           y = Inf, vjust = 1.6, hjust = 0, color = CITE, size = 3.4,
-           label = paste0("mean ", pct(mean(filter(paper, direction == "pooled")$overlap)))) +
-  scale_x_continuous(labels = scales::percent) +
-  labs(title = "Overlap between the two lists, paper by paper",
-       subtitle = "Pooled over papers cited and papers citing",
-       x = "Share of the citation list also named by the embedding", y = "Papers") +
+```{r fig-bylength}
+#| fig-cap: "Agreement does not depend much on how many papers the citation measure names. The apparent split in a raw histogram is an artifact of short lists, where overlap can only take a few values."
+pooled %>%
+  mutate(bucket = cut(n, breaks = c(0, 1, 2, 3, 5, 9, 100),
+                      labels = c("1", "2", "3", "4–5", "6–9", "10+"))) %>%
+  group_by(bucket) %>%
+  summarise(papers = n(), mean = mean(overlap),
+            se = sd(overlap) / sqrt(n()), .groups = "drop") %>%
+  ggplot(aes(bucket, mean)) +
+  geom_col(fill = EMBED, alpha = 0.85, width = 0.65) +
+  geom_errorbar(aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se),
+                width = 0.15, color = "grey30") +
+  geom_text(aes(label = paste0("n=", papers)), vjust = -0.6, size = 3, color = "grey45",
+            y = 0) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Overlap by length of the served citation list",
+       subtitle = "Mean and 95% interval", x = "Papers on the served list", y = "Overlap") +
   theme_report()
 ```
+
+One structural caveat. Text similarity is symmetric, while the citation measure distinguishes papers cited from papers citing; pooling both directions scores one symmetric list against a longer, two-sided target, which depresses overlap somewhat. Taken one direction at a time the figures are `r pct(mean(filter(paper, direction=="out")$overlap))` for papers cited and `r pct(mean(filter(paper, direction=="in")$overlap))` for papers citing — the same story.
 
 ## They are nonetheless measuring something shared
 
-Low overlap on a list of four or five is compatible with two measures that broadly agree about what is relevant and disagree about what to rank first. That is what the data show.
+Low overlap within a four-item list is compatible with two measures that broadly agree on relevance and disagree on ordering. That is what the data show.
 
-```{r fig-meancos}
-#| fig-cap: "Papers picked by the citation measure are far more similar in text than chance, though less so than the embedding's own picks. Bars are mean cosine similarity over the same papers and the same matched depth."
-paper %>%
-  filter(direction == "pooled") %>%
-  summarise(`Citation measure's picks` = mean(cos_theirs),
-            `Embedding's own picks` = mean(cos_ours),
-            `Random, year-matched` = mean(cos_year_matched)) %>%
+```{r fig-cosdist}
+#| fig-cap: "Papers named by the citation measure are much more textually similar than year-matched random papers, though less so than the embedding's own picks. Boxes span the interquartile range across papers."
+pooled %>%
+  select(`Text similarity's picks` = cos_ours,
+         `Citation measure's picks` = cos_theirs,
+         `Random, year-matched` = cos_year_matched) %>%
   pivot_longer(everything(), names_to = "set", values_to = "cos") %>%
-  mutate(set = factor(set, levels = c("Embedding's own picks",
+  mutate(set = factor(set, levels = c("Random, year-matched",
                                       "Citation measure's picks",
-                                      "Random, year-matched"))) %>%
+                                      "Text similarity's picks"))) %>%
   ggplot(aes(cos, set, fill = set)) +
-  geom_col(width = 0.6, alpha = 0.9) +
-  geom_text(aes(label = sprintf("%.2f", cos)), hjust = -0.25, size = 3.6, color = "grey25") +
-  scale_fill_manual(values = c(EMBED, CITE, BASE), guide = "none") +
-  scale_x_continuous(limits = c(0, 0.85), expand = expansion(c(0, 0.02))) +
+  geom_boxplot(width = 0.55, outlier.size = 0.3, outlier.alpha = 0.15) +
+  scale_fill_manual(values = c(BASE, CITE, EMBED), guide = "none") +
   labs(title = "How alike in text are the papers each measure names?",
-       subtitle = "Mean cosine similarity, paper level", x = "Mean cosine", y = NULL) +
+       subtitle = "Mean cosine similarity per paper, across 3,868 papers",
+       x = "Cosine similarity", y = NULL) +
   theme_report()
 ```
 
-Read the other way round it says the same thing. The papers the embedding picks carry a mean citation weight of `r sprintf("%.2f", res$paper_pooled$w_ours)`, against `r sprintf("%.2f", res$paper_pooled$w_theirs)` for the citation measure's own picks and `r sprintf("%.4f", res$paper_pooled$w_uniform)` for random papers. Each measure ranks the other's choices far above chance.
-
-The sharpest version of the point is a discrimination test. Given a pair of papers and nothing but their cosine similarity, how well can you tell whether one cites the other?
+The sharpest version is a discrimination test. Take the 14,824 pairs of corpus papers where one cites the other, and a sample of pairs with no link between them. Given only cosine similarity, how often is the linked pair the more similar of a randomly drawn linked/unlinked couple?
 
 ```{r fig-auc}
-#| fig-cap: "Cosine similarity separates citation-linked pairs from unlinked ones almost cleanly. Holding both publication years fixed barely changes it, so this is not an artifact of citations running backward in time."
+#| fig-cap: "Text similarity separates citation-linked pairs from unlinked ones. Holding both publication years fixed barely changes it."
 pairs %>%
   mutate(group = factor(group, levels = c("citation-linked", "unlinked, year-matched", "unlinked"))) %>%
   ggplot(aes(cosine, fill = group, color = group)) +
@@ -148,68 +154,69 @@ pairs %>%
   scale_fill_manual(values = c(CITE, BASE, "grey80")) +
   scale_color_manual(values = c(CITE, BASE, "grey80")) +
   labs(title = "Cosine similarity of citation-linked and unlinked pairs",
-       subtitle = sprintf("Area under the ROC curve: %.3f, and %.3f against year-matched pairs",
+       subtitle = sprintf("Area under the ROC curve %.3f; %.3f against year-matched pairs",
                           res$pairs$auc_cos_predicts_link,
                           res$pairs$auc_cos_predicts_link_year_matched),
        x = "Cosine similarity", y = "Density") +
   theme_report()
 ```
 
-Among pairs that *are* linked, the rank correlation between cosine similarity and citation weight is `r sprintf("%.2f", res$pairs$spearman_cos_vs_weight_on_linked)`. So the embedding is good at telling related from unrelated, and much weaker at reproducing the citation measure's ordering within the related set — which is the same conclusion the overlap figures reach.
+The answer is `r sprintf("%.1f%%", 100*res$pairs$auc_cos_predicts_link)` of the time, and `r sprintf("%.1f%%", 100*res$pairs$auc_cos_predicts_link_year_matched)` once the comparison pairs are matched on both publication years.
 
-## Does it matter how an author's papers are aggregated?
+Two things this does **not** say. It is not a claim that citation links can be predicted from text: links are so rare that any rule catching most of them would raise far more false alarms than true ones. And the pairs counted as unlinked certainly include genuinely related work whose citation simply is not recorded, which makes this a lower bound on how well text tracks relatedness rather than an unbiased estimate.
 
-Barely. Scoring a candidate paper by its best match among an author's papers does slightly better than averaging over them.
+Among pairs that *are* linked, the rank correlation between cosine similarity and citation weight is `r sprintf("%.2f", res$pairs$spearman_cos_vs_weight_on_linked)`. Text similarity is therefore good at telling related from unrelated and weak at reproducing the citation ordering within the related set. That weakness is a fact about the pair of measures, not about either one: nothing here establishes that the citation weight has a stable ordering to reproduce.
 
-```{r agg-table}
-author %>%
-  filter(min_own == 1) %>%
-  group_by(Rule = recode(rule, max = "Best-matching own paper", mean = "Average over own papers")) %>%
-  summarise(Authors = n(), Overlap = pct(mean(overlap)), .groups = "drop") %>%
-  kable(align = "lrr")
-```
+Aggregating an author's papers by their best match rather than their average changes little — `r pct(mean(filter(author, rule=="max", min_own==1)$overlap))` against `r pct(mean(filter(author, rule=="mean", min_own==1)$overlap))`.
 
-## Abstracts against introductions, redone
+## Abstracts against introductions
 
-The 9 August experiment compared abstract embeddings against introduction embeddings, judged against a coupling measure reconstructed from `citation_intensity`. That database has since been replaced, after an audit found seven classes of bug in its LaTeX extraction. Redone against `citations.db`, on `r arms$pool` papers holding both kinds of embedding:
+A separate question, from an earlier experiment: does embedding more of a paper find better related work? Introductions were compared against abstracts, both judged against **bibliographic coupling** — the extent to which two papers cite the same works, which is defined for every pair and so does not require a citation running directly between them.
+
+That earlier run used a reference database since rebuilt, after an audit of the code that extracts references from LaTeX found seven classes of error in it, among them following file inclusions only one level deep and mistaking appendix citations for main-text ones. Redone against the current database, on `r arms$pool` papers holding both kinds of embedding:
 
 ```{r arms-table}
 tibble(
-  Arm = c("Abstract, 9 August", "Introduction, 9 August",
+  Arm = c("Abstract, first run", "Introduction, first run",
           "Abstract, corrected", "Introduction, corrected"),
   `Rank correlation with coupling` = c(0.373, 0.371,
                                        arms$abstract$spearman_coupled_pairs,
                                        arms$intro$spearman_coupled_pairs),
   `Shared neighbors in top ten` = c(2.25, 2.36,
                                     arms$abstract$top10_overlap_with_coupling,
-                                    arms$intro$top10_overlap_with_coupling)
-) %>%
+                                    arms$intro$top10_overlap_with_coupling)) %>%
   mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
   kable(align = "lrr")
 ```
 
-Introductions are now ahead on both statistics, where the superseded yardstick showed no difference. A paired test over the `r arms$paired$papers` papers where both arms can be scored puts the advantage at `r sprintf("%.2f", arms$paired$mean_difference_intro_minus_abstract)` of one neighbor in ten, with a 95% interval of `r sprintf("%.2f to %.2f", arms$paired$ci95[1], arms$paired$ci95[2])` and a Wilcoxon *p* of `r sprintf("%.3f", arms$paired$wilcoxon_p)`. Introductions win on `r arms$paired$intro_better` papers, lose on `r arms$paired$abstract_better`, and tie on `r arms$paired$tied`.
+Introductions are ahead on both statistics. The shared-neighbor statistic is the one that can be tested, because it is computed per paper and the two arms cover the same papers: paired over the `r arms$paired$papers` papers where both can be scored, introductions lead by `r sprintf("%.2f", arms$paired$mean_difference_intro_minus_abstract)` of one neighbor in ten, 95% interval `r sprintf("%.2f to %.2f", arms$paired$ci95[1], arms$paired$ci95[2])`, Wilcoxon *p* = `r sprintf("%.3f", arms$paired$wilcoxon_p)`. They win on `r arms$paired$intro_better` papers, lose on `r arms$paired$abstract_better`, tie on `r arms$paired$tied`. The difference between the two rank correlations is not tested and should be read as descriptive only.
 
-The effect is detectable and very small, against an embedding cost six to seven times higher. **The recommendation to keep abstracts is unchanged**, and now rests on a measured effect rather than on the absence of one.
+Two reasons to hold this loosely. Repairing the reference extraction moved the abstract arm's shared-neighbor count from 2.25 to `r sprintf("%.2f", arms$abstract$top10_overlap_with_coupling)`, a shift several times larger than the `r sprintf("%.2f", arms$paired$mean_difference_intro_minus_abstract)` effect being estimated, so the yardstick is not obviously stable enough to adjudicate a difference this small. And the `r arms$pool` papers are those whose introductions could be extracted from LaTeX, which is not a random subset of the corpus.
+
+The measured costs are 0.42 seconds per paper for a title and abstract against 3.11 seconds for a title and introduction, on the same hardware and model. **The recommendation to keep abstracts is unchanged**, now on the basis of an effect too small to be worth seven times the computation rather than no effect at all.
+
+This does not contradict the claim above that nothing can settle which measure is more accurate. Those are different questions. Here the notion of relatedness is held fixed — coupling — and two *inputs to the same measure* are compared, which a fixed yardstick can do. Comparing text similarity against citation similarity compares two rival notions of relatedness, and no yardstick stands outside both.
 
 ## What follows for the site
 
-Offering a choice of measure genuinely changes what a user sees. The two lists are not near-duplicates, which supports the 11 August direction rather than picking one.
+Offering a choice of measure genuinely changes what a reader sees, which supports carrying both rather than picking one.
 
-A combined measure is worth building, with one constraint. It cannot be computed from the tables the site serves: those keep the top ten per direction, and the pairs that distinguish the measures — strong on citations and middling on text, or the reverse — sit outside both top tens. It needs the underlying citation edges and the full similarity matrix, which means it belongs wherever the embeddings are produced rather than in the serving layer.
+A combined measure is worth building, with one constraint worth knowing before anyone starts. It cannot be assembled from the tables the website reads, because those keep only the ten strongest links per direction, and the pairs that separate the two measures — strong on citations and middling on text, or the reverse — fall outside both top tens by construction. It needs the underlying citation links and the full similarity matrix, so it belongs in the pipeline that produces the embeddings rather than in the layer that serves pages.
 
-## Two limitations specific to these numbers
+## Limitations
 
-A citation link is only visible when both papers sit in the arXiv corpus. A strong relationship to a published paper outside it cannot appear in the citation measure at all — the Wolfers unilateral divorce paper, the example the team already discusses, occurs 45 times as a parsed reference and never as a node. The comparison therefore runs on the subset of relationships the citation measure is able to represent.
+**Most references are invisible to the citation measure.** A link exists only when both papers are in the corpus, and 214,953 of 229,996 parsed references — 93.5% — point at work outside it, overwhelmingly journal articles. The standing example is Wolfers' study of unilateral divorce laws, which the difference-in-differences literature cites constantly as an empirical setting even though nothing in its abstract concerns econometric method; it appears 45 times in the corpus as a reference and never as a paper, because it was published in a journal rather than posted to arXiv. Two measures cannot disagree about a paper only one of them can see, so this comparison covers the relationships both can represent, and the citation measure is blind to a large class of relevant work.
 
-The citation extraction ran on whatever version of each paper the corpus holds, and that pipeline does not pick up revisions (reported as `econ-corpus` issue #2, affecting about 10% of papers). The embeddings are of current abstracts. For a minority of papers the two describe different versions of the same work.
+**Some papers are compared across versions.** The citation extraction runs on whatever version of a paper the corpus holds, and that pipeline never revisits a paper once ingested, so revisions are missed; 642 of 5,732 papers, 11.2%, are at a superseded version. The embeddings are of current abstracts. Dropping those papers moves the headline overlap from 22.44% to 22.37%, so this does not drive the result.
+
+**Both measures were built by the same project**, and the citation weight is one particular construction among many reasonable ones. A different weighting could shift agreement in either direction.
 
 ## Reproducing
 
 ```bash
-uv run compare_citation_embedding.py   # -> comparison_results.json + the three CSVs
-uv run abstracts_vs_intros_v2.py       # -> abstracts_vs_intros_v2.json
+uv run compare_citation_embedding.py   # comparison_results.json + three CSVs
+uv run abstracts_vs_intros_v2.py       # abstracts_vs_intros_v2.json
 quarto render citation-vs-embedding.qmd
 ```
 
-Both scripts read only local files and reproduce exactly. They need the corpus in the layout `econ-corpus/docs/00-cold-start.md` prescribes.
+Both scripts live in `experiments/` in the `econbase-abstracts` repository, read only local files, and reproduce exactly. They need a local copy of the corpus, fetched as `econ-corpus/docs/00-cold-start.md` describes.
