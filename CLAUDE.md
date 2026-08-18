@@ -88,7 +88,11 @@ Method and schema for the citation data are documented in the `econ-corpus` repo
 
 ## This repository is public
 
-The GitHub repository is public, and the whole working tree is also pushed to a public Hugging Face Space, `CLAUDE.md` included. Everything written here is published, so keep notes operational — which data to use, which is superseded, what needs re-running — and keep assessments of other people's code and other repositories' internal history in the private coordination repo instead.
+The GitHub repository is public, and the whole working tree is also pushed to a public Hugging Face Space, `CLAUDE.md` included. Everything written here is published at the moment it is written, not at the moment someone decides to push it.
+
+**Keep this repository to its own code and data.** Anything about the wider project belongs in the private coordination repo `fditraglia/econbase-sqare-docs`: write-ups and reports, assessments of other people's code, another repository's internal history or defects, meeting decisions, and anything naming a collaborator. Notes here should be operational — which data to use, which is superseded, what needs re-running, how to run it.
+
+The line is easy to cross while writing something innocuous. It happened on 18 August: a comparison report was committed here and pushed publicly, and its limitations section diagnosed the corpus pipeline's handling of revisions and cited an audit of its reference extraction. Both statements were accurate and neither belonged on a public repository. The report was moved to `econbase-sqare-docs/reference/`, where it renders against the data that stays here; the commits that carried it remain in this repository's history. Before committing prose here, check whether it is about *this* code or about the project around it.
 
 ## Joplin notes (MCP)
 
